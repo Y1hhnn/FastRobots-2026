@@ -1,5 +1,5 @@
 # The URL the site will be built for
-base_url = "https://example.com"
+base_url = "https://y1hhnn.github.io/FastRobots-web/"
 title = "ECE4160 Fast Robots"
 
 # Whether to automatically compile all Sass files in the sass directory
