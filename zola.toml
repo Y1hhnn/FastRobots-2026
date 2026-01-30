@@ -1,0 +1,31 @@
+# The URL the site will be built for
+base_url = "https://example.com"
+title = "ECE4160 Fast Robots"
+
+# Whether to automatically compile all Sass files in the sass directory
+compile_sass = true
+
+# Whether to build a search index to be used later on by a JavaScript library
+build_search_index = false
+
+theme = "apollo"
+taxonomies = [{ name = "tags" }]
+
+[markdown]
+render_emoji = true
+
+[markdown.highlighting]
+style = "inline"
+theme = "ayu-dark"
+
+[extra]
+theme = "auto"
+socials = [
+  { name = "github", url = "https://github.com/", icon = "github" },
+]
+menu = [
+  { name = "/posts", url = "/posts", weight = 1 },
+  { name = "/about", url = "/about", weight = 2 },
+]
+
+fancy_code = true
