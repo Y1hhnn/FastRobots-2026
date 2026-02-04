@@ -8,7 +8,7 @@ The first part of the lab helped me become familiar with programming the SparkFu
 # Lab 1A
 
 After installing the Arduino IDE and the board package, I selected the SparkFun RedBoard Artemis Nano as the active board and connect it to the correct serial port.
-<img src="/lab1/boardPort.png" width = "600">
+{{ image(path="content/posts/lab1/boardPort.png", alt="serial screenshot", width=600, class="center" )}}
 
 Then, I verified the toolchain by compiling and uploading the example cases.
 
@@ -18,7 +18,7 @@ This tests the programming of the board and the LED control. A blue light is fla
 
 ## Serial Example
 This tests USB serial communication. After printing the setup message, it echoes the input string to the serial monitor.
-<img src="/lab1/serial_print.png" width = "600">
+{{ image(path="content/posts/lab1/serial_print.png", alt="serial screenshot", width=600, class="center" )}}
 
 ## Analog Read Example
 This tests temperature sensing. After grasping the board, the sensor warms up, raising the temperature from approximately $\approx 33,100$ to approximately $\approx 33,500$. 
@@ -58,7 +58,7 @@ deactivate
 ```
 After downloading the lab codebase, I loaded and flashed ble_arduino.ino onto the Artemis board. Once uploaded, the board began advertising over BLE and printed its Bluetooth MAC address to the serial monitor.   
 
-<img src="/lab1/mac_address.png" width = "600">
+{{ image(path="content/posts/lab1/mac_address.png", alt="serial screenshot", width=600, class="center" )}}
 
 Then I generate a new BLEService UUID and replace the original one in ble_arduino.ino.
 
@@ -70,9 +70,9 @@ Both the Artemis MAC Address and BLEService UUID were also copied into ble_pytho
 
 After creating the ArtemisBLEController, we can connect to the Artemis Device. Both the Jupiter notebook and the Arduino serial monitor print the success messages.
 
-<img src="/lab1/connection.png" width = "500">
+{{ image(path="content/posts/lab1/connection.png", alt="serial screenshot", width=500, class="center" )}}
 
-<img src="/lab1/connection1.png" width = "600">
+{{ image(path="content/posts/lab1/connection1.png", alt="serial screenshot", width=300, class="center" )}}
 
 ## Codebase Understanding
 The provided code consists of two coordinated components and creates a clear  client–server architecture
@@ -128,7 +128,7 @@ Python sends the command using:
 ble.send_command(CMD.ECHO, "HiHello")
 ```
 The board returned the augmented string on the serial monitor:
-<img src="/lab1/task1.png" width = "300">
+{{ image(path="content/posts/lab1/task1.png", alt="serial screenshot", width=300, class="center" )}}
 
 
 ## Task 2: SEND_THREE_FLOATS
@@ -165,7 +165,7 @@ ble.send_command(CMD.SEND_THREE_FLOATS, "0.1|0.2|0.25")
 
 Then, the values are printed to the serial monitor.
 
-<img src="/lab1/task2.png" width = "300">
+{{ image(path="content/posts/lab1/task2.png", alt="serial screenshot", width=400, class="center" )}}
 
 
 ## Task 3: GET_TIME_MILLIS
@@ -187,7 +187,7 @@ I added this new command to the enum CommandTypes and the handle_command() funct
 
 Python retrieves the value:
 
-<img src="/lab1/task3.png" width = "500">
+{{ image(path="content/posts/lab1/task3.png", alt="serial screenshot", width=500, class="center" )}}
 
 ## Task 4: Notification Handler
 Instead of polling for data repeatedly, I created a BLE notification handler in Python to receive incoming values.  When Artemis writes to a characteristic, the callback function is triggered immediately. If the value is a timestamp, it is recognized and collected into a list.
@@ -205,7 +205,7 @@ def time_notification_handler(sender, data: bytearray):
 ```python
 ble.start_notify(ble.uuid["RX_STRING"], time_notification_handler)
 ```
-<img src="/lab1/task4.png" width = "500">
+{{ image(path="content/posts/lab1/task4.png", alt="serial screenshot", width=300, class="center" )}}
 
 ## Task 5: Per-Message Transmission
 
@@ -220,7 +220,7 @@ while time.time() - start < duration:
     ble.send_command(CMD.GET_TIME_MILLIS, "")
 ```
 
-<img src="/lab1/task5.png" width = "400">
+{{ image(path="content/posts/lab1/task5.png", alt="serial screenshot", width=400, class="center" )}}
 
 From these measurements, I determined an average rate of approximately 17 messages per second.
 
@@ -286,7 +286,7 @@ ble.send_command(CMD.START_COLLECT_DATA, "")
 time.sleep(duration)
 ble.send_command(CMD.SEND_TIME_DATA, "")
 ```
-<img src="/lab1/task6.png" width = "400">
+{{ image(path="content/posts/lab1/task6.png", alt="serial screenshot", width=600, class="center" )}}
 
 Using this approach, I measured a transfer rate of approximately 150 messages per second . This corresponds to an effective data throughput of about 1400 bytes per second (1.4 KB). 
 
@@ -332,8 +332,7 @@ def temp_notification_handler(sender, data: bytearray):
 ble.start_notify(ble.uuid["RX_STRING"], temp_notification_handler)
 ```
 
-<img src="/lab1/task7.png" width = "400">
-
+{{ image(path="content/posts/lab1/task7.png", alt="serial screenshot", width=400, class="center" )}}
 
 ## Task 8: Comparison of Per-Message vs. Batch Transmission
 Task 5 uses a request–response communication pattern.
