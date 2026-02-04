@@ -29,3 +29,6 @@ menu = [
 ]
 
 fancy_code = true
+
+mathjax = true
+mathjax_dollar_inline_enable=true
