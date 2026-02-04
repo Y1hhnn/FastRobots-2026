@@ -15,6 +15,7 @@ Then, I verified the toolchain by compiling and uploading the example cases.
 ## Blink Example
 This tests the programming of the board and the LED control. A blue light is flashing on the board. 
 
+[video](https://youtube.com/shorts/RfZdJ5EeOyk?feature=share)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://www.youtube.com/embed/RfZdJ5EeOyk"
@@ -31,8 +32,8 @@ This tests USB serial communication. After printing the setup message, it echoes
 {{ image(path="content/posts/lab1/serial_print.png", alt="serial screenshot", width=600, class="center" )}}
 
 ## Analog Read Example
-This tests temperature sensing. After grasping the board, the sensor warms up, raising the temperature from approximately $\approx 33,100$ to approximately $\approx 33,500$. 
-
+This tests temperature sensing. After grasping the board, the sensor warms up, raising the temperature from approximately $\approx 33,100$ to approximately $\approx 33,500$.
+[Video Here](https://youtube.com/shorts/b1mpKQEn4Ag?feature=share)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/b1mpKQEn4Ag"
@@ -45,7 +46,7 @@ This tests temperature sensing. After grasping the board, the sensor warms up, r
 
 ## PMD Microphone Example
 This test checks the microphone's functionality. When I speak into the microphone, the loudest frequency increases from $\approx 200$ to  $\approx 1,000$.
-
+[video](https://youtube.com/shorts/L2zy1zvAQZk?feature=share)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/L2zy1zvAQZk"
