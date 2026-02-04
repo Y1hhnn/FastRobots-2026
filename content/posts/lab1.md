@@ -14,7 +14,9 @@ Then, I verified the toolchain by compiling and uploading the example cases.
 
 ## Blink Example
 This tests the programming of the board and the LED control. A blue light is flashing on the board. 
-<video src="/lab1/blink.mp4" type="video/mp4" controls width="400">
+
+<div style="width:100%;height:0px;position:relative;padding-bottom:64.923%;"><iframe src="https://youtube.com/shorts/RfZdJ5EeOyk?feature=share" frameborder="0" width="100%" height="100%" allowfullscreen style="width:100%;height:100%;position:absolute;left:0px;top:0px;overflow:hidden;"></iframe></div>
+
 
 ## Serial Example
 This tests USB serial communication. After printing the setup message, it echoes the input string to the serial monitor.
@@ -22,11 +24,12 @@ This tests USB serial communication. After printing the setup message, it echoes
 
 ## Analog Read Example
 This tests temperature sensing. After grasping the board, the sensor warms up, raising the temperature from approximately $\approx 33,100$ to approximately $\approx 33,500$. 
-<video src="/lab1/analogRead.mp4" type="video/mp4" controls width="400">
+<div style="width:100%;height:0px;position:relative;padding-bottom:64.923%;"><iframe src="https://youtube.com/shorts/b1mpKQEn4Ag?feature=share" frameborder="0" width="100%" height="100%" allowfullscreen style="width:100%;height:100%;position:absolute;left:0px;top:0px;overflow:hidden;"></iframe></div>
 
 ## PMD Microphone Example
-This test checks the microphone's functionality. When I speak into the microphone, the loudest frequency increases from $\approx 200$ to  $\approx 1,000$. 
-<video src="/lab1/microphone.mp4" type="video/mp4" controls width="400">
+This test checks the microphone's functionality. When I speak into the microphone, the loudest frequency increases from $\approx 200$ to  $\approx 1,000$.
+
+<div style="width:100%;height:0px;position:relative;padding-bottom:64.923%;"><iframe src="https://youtube.com/shorts/L2zy1zvAQZk?feature=share" frameborder="0" width="100%" height="100%" allowfullscreen style="width:100%;height:100%;position:absolute;left:0px;top:0px;overflow:hidden;"></iframe></div>
 
 # Lab 1B
 
