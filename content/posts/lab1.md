@@ -25,6 +25,7 @@ This tests the programming of the board and the LED control. A blue light is fla
   </iframe>
 </div>
 
+
 ## Serial Example
 This tests USB serial communication. After printing the setup message, it echoes the input string to the serial monitor.
 {{ image(path="content/posts/lab1/serial_print.png", alt="serial screenshot", width=600, class="center" )}}
