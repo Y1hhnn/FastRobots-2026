@@ -15,7 +15,7 @@ Then, I verified the toolchain by compiling and uploading the example cases.
 ## Blink Example
 This tests the programming of the board and the LED control. A blue light is flashing on the board. 
 
-[video](https://youtube.com/shorts/RfZdJ5EeOyk?feature=share)
+[Video Here](https://youtube.com/shorts/RfZdJ5EeOyk?feature=share)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://www.youtube.com/embed/RfZdJ5EeOyk"
@@ -46,7 +46,7 @@ This tests temperature sensing. After grasping the board, the sensor warms up, r
 
 ## PMD Microphone Example
 This test checks the microphone's functionality. When I speak into the microphone, the loudest frequency increases from $\approx 200$ to  $\approx 1,000$.
-[video](https://youtube.com/shorts/L2zy1zvAQZk?feature=share)
+[Video Here](https://youtube.com/shorts/L2zy1zvAQZk?feature=share)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/L2zy1zvAQZk"
