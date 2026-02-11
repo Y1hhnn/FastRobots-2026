@@ -17,7 +17,7 @@ Finally, I ran the Example1_Basics test program to verify that the board could s
 [Video Here](https://youtube.com/shorts/Umetk0np0nc)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/shorts/Umetk0np0nc"
+    src="https://youtube.com/embed/Umetk0np0nc"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
@@ -322,6 +322,12 @@ Compared with using either sensor alone, the fused result achieves both fast res
 
 # Sample Data
 
+## Speed of Sample
+
+## IMU data in Array
+
+## 5s of IMU Data
+
 
 # Record a stunt
 After playing around with the car, I found that I could make it flip over by quickly switching between forward and backward. This feature allows the car to perform an emergency stop or turn back. The board may recognize this kind of motion if there are significant changes in the IMUs.
@@ -329,7 +335,7 @@ After playing around with the car, I found that I could make it flip over by qui
 [Video Here](https://youtube.com/shorts/qFvlq4UfhxE)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/shorts/qFvlq4UfhxE"
+    src="https://youtube.com/embed/qFvlq4UfhxE"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
