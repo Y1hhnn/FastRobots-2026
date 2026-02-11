@@ -324,9 +324,56 @@ Compared with using either sensor alone, the fused result achieves both fast res
 
 ## Speed of Sample
 
+I added a `loop_count` counter (incremented once per iteration) outside the IMU sampling block to measure how fast the main loop was actually running. Over the collection window, `loop_count` always matched `sample_count`. That is, every time the loop reached the sampling condition, `myICM.dataReady()` was already `true` and a new IMU measurement was available. The IMU output data rate is higher than the loop’s effective sampling rate, so the microcontroller loop becomes the limiting factor.
+
+To speed up execution of main loop,
+- I removed all the delays & Serial.print inserted for debugging。
+- I checked the $myICM.dataReady()$ function to see if I should collect the sensor's data in the main loop. 
+- I minimized all unnecessary computations inside the loop and avoided dynamic memory allocation
+
+As a result, the loop can run close to the hardware sampling limit of the IMU.
+
+For a 5 s run, the board recorded 1337 samples, giving an effective sampling rate of $\approx 267 text{Hz}$ (≈ 270 Hz).
+
 ## IMU data in Array
 
+Instead of storing everything in one large struct array, I chose separate arrays for accelerometer- and gyroscope-derived signals. 
+- This allows for efficient access to operations such as filtering and offline analysis (FFT and plotting). 
+- Separate arrays provide the flexibility to enable and disable channels. When some components are no longer used, I can comment them out to save RAM without altering the overall data structure.
+- This also makes the code more readable.
+
+Datatype choice:
+- Use `unsigned long` for time stamps. We need time in microseconds for computing dt and plotting. 
+- Use `float` for sensor value. IMU outputs and computed angles are real-valued. Float value ensure the enough precision for orientation estimation.
+- Use `int` for counting (E.g. `loop_count`, `sample_count`). Using integers is compact and preserve full precision.
+
+The RedBoard Artemis Nano has 384 KB RAM. Besides arrays, board also need memory for BLE stack, global objects, and call stacks/ local variables. So, $150-250KB$ could be a good range for array buffs.
+
+My current buffer is about (SAMPLE_LEN = 3000):
+- `ime_buffer`,  `temp_buffer`
+- `raw_acc_x/y/z (3)`
+- `raw_acc_roll/pitch (2)`
+- `gyr_roll/pitch/yaw (3)`
+- `filt_acc_roll/pitch (2)`
+- `comp_roll/pitch (2)`
+
+Total = 14 arrays × 3000 × 4 = 168,000 bytes ≈ 164 KB
+
+
 ## 5s of IMU Data
+
+```cpp
+// Sample Buffer
+const int SAMPLE_LEN = 3000;  
+```
+
+I set the maximum sample buffer size to 3,000. Since our sample rate is around 270 Hz, we can store over 10 seconds of IMU data.
+
+
+<div style="display:flex; gap:20px; justify-content:center; align-items:flex-start;">
+{{ image(path="content/posts/lab2/5s_array.png", alt="5s_array", width=400)}}
+{{ image(path="content/posts/lab2/5s_chart.png", alt="5s_chart", width=400)}}
+</div>
 
 
 # Record a stunt
