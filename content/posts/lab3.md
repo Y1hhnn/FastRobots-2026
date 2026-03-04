@@ -225,6 +225,8 @@ I use the a data collection routine implemented in Lab 1 & 2 to  record time-sta
 
 When the computer sends the START_COLLECT_DATA command, the Artemis begins recording sensor data for a fixed time interval. After the data collection period completes, the host computer sends a command (GET_TOF_READINGS or GET_COMP_READINGS) that triggers the Artemis to transmit the stored data through BLE notifications. 
 
+Also, in the main loop, I used 'if (myICM.dataReady() && distanceSensor1.checkForDataReady() && distanceSensor2.checkForDataReady())' to check if all the sensors are ready to record. This ensures the same time-stamped.
+
 - ToF distance measurements over time. 
 - IMU roll and pitch angles over time.
 
