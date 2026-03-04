@@ -1,5 +1,5 @@
 +++
-title = "Lab1: Artemis and Bluetooth"
+title = "Lab 1: Artemis and Bluetooth"
 date = "2026-02-03"
 +++
 

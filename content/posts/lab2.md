@@ -1,5 +1,5 @@
 +++
-title = "Lab2: IMU"
+title = "Lab 2: IMU"
 date = "2026-02-11"
 +++
 
@@ -351,11 +351,11 @@ The RedBoard Artemis Nano has 384 KB RAM. Besides arrays, board also need memory
 
 My current buffer is about (SAMPLE_LEN = 3000):
 - `ime_buffer`,  `temp_buffer`
-- `raw_acc_x/y/z (3)`
-- `raw_acc_roll/pitch (2)`
-- `gyr_roll/pitch/yaw (3)`
-- `filt_acc_roll/pitch (2)`
-- `comp_roll/pitch (2)`
+- `raw_acc_x/y/z'
+- `raw_acc_roll/pitch'
+- `gyr_roll/pitch/yaw'
+- `filt_acc_roll/pitch'
+- `comp_roll/pitch'
 
 Total = 14 arrays × 3000 × 4 = 168,000 bytes ≈ 164 KB
 
