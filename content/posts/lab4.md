@@ -131,3 +131,167 @@ After verifying that both motors worked individually, I installed all components
 When moving forward, the robot was able to drive roughly in a straight line, although some slight deviation was present due to differences between the motors.
 
 However, when the control algorithm commanded the robot to move in reverse, the robot did not move backward as expected. Instead, it rotated approximately 360 degrees before continuing to move forward. This behavior indicates that the motors are not perfectly balanced and that calibration of the motor speeds or PWM values will be necessary to achieve stable and symmetric motion.
+
+## PWM Operating Limits
+
+To ensure stable motion, I experimentally determined the minimum and maximum PWM values required for each motor in both forward and reverse directions. Due to mechanical differences between the motors, the same PWM value does not always produce the same motor speed. 
+
+The experimentally determined limits are shown below:
+```cpp
+const int FWD_LEFT_MIN = 40;  const int FWD_LEFT_MAX = 212;
+const int FWD_RIGHT_MIN = 50; const int FWD_RIGHT_MAX = 255;
+
+const int REV_LEFT_MIN = 48;  const int REV_LEFT_MAX = 210;
+const int REV_RIGHT_MIN = 200;const int REV_RIGHT_MAX = 255;
+```
+Below the minimum PWM values, the motors cannot reliably overcome static friction and may fail to rotate. Above the maximum values, the motors reach saturation and small speed differences between the motors cause the robot to turn unexpectedly.
+
+[Video Here](https://youtube.com/shorts/yQIVZ8bJPqE)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/yQIVZ8bJPqE"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+[Video Here](https://youtube.com/shorts/Jnl0OjlzQsU)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/Jnl0OjlzQsU"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+
+
+## Motor Calibration
+
+After determining the PWM limits, I implemented a calibration function that converts percentage motor commands into calibrated PWM signals. This allows the control algorithm to specify motor speeds in percentages instead of raw PWM values, while the code maps those percentages into the experimentally determined operating ranges.
+
+```cpp
+void setMotors(int leftPct, int rightPct) {
+  int leftPWM = 0;
+  int rightPWM = 0;
+
+  // 1. Process Left Motor
+  if (leftPct > 0) {
+    leftPWM = map(leftPct, 1, 100, FWD_LEFT_MIN, FWD_LEFT_MAX);
+    analogWrite(LEFT_MOTOR_IN1, leftPWM);
+    analogWrite(LEFT_MOTOR_IN2, 0);
+  } else if (leftPct < 0) {
+    leftPWM = map(abs(leftPct), 1, 100, REV_LEFT_MIN, REV_LEFT_MAX);
+    analogWrite(LEFT_MOTOR_IN1, 0);
+    analogWrite(LEFT_MOTOR_IN2, leftPWM);
+  } else {
+    // 0% = Stop
+    analogWrite(LEFT_MOTOR_IN1, 0);
+    analogWrite(LEFT_MOTOR_IN2, 0);
+  }
+
+  // 2. Process Right Motor
+  if (rightPct > 0) {
+    rightPWM = map(rightPct, 1, 100, FWD_RIGHT_MIN, FWD_RIGHT_MAX);
+    analogWrite(RIGHT_MOTOR_IN1, rightPWM);
+    analogWrite(RIGHT_MOTOR_IN2, 0);
+  } else if (rightPct < 0) {
+    rightPWM = map(abs(rightPct), 1, 100, REV_RIGHT_MIN, REV_RIGHT_MAX);
+    analogWrite(RIGHT_MOTOR_IN1, 0);
+    analogWrite(RIGHT_MOTOR_IN2, rightPWM);
+  } else {
+    // 0% = Stop
+    analogWrite(RIGHT_MOTOR_IN1, 0);
+    analogWrite(RIGHT_MOTOR_IN2, 0);
+  }
+}
+```
+
+```cpp
+void straight(int speedPct) {
+  setMotors(speedPct, speedPct);
+}
+
+void reverse(int speedPct) {
+  int revSpeed = -abs(speedPct); 
+  setMotors(revSpeed, revSpeed);
+}
+
+void turnLeft(int speedPct) {
+  setMotors(-speedPct, speedPct);
+}
+
+void turnRight(int speedPct) {
+  setMotors(speedPct, -speedPct);
+}
+
+void stopCar() {
+  setMotors(0, 0);
+}
+```
+
+Using this calibration method, the robot was able to drive approximately 10 feet in a straight line at 50% PWM, demonstrating that the motor outputs were reasonably balanced after calibration.
+
+[Video Here](https://youtube.com/shorts/sNiyXQXkktE)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/sNiyXQXkktE"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+
+## Open-Loop Untethered Control
+
+After calibrating the PWM ranges and implementing the percentage-based motor control function, I was able to perform open-loop, untethered control of the robot. The robot was powered entirely by its onboard battery and controlled by the Artemis without any external connections.
+
+The control sequence commands the robot to move forward, perform 90° turns, and stop at specific intervals.
+```cpp
+straight(50);
+delay(400);
+
+stopCar();
+delay(500);
+
+turnRight(50);
+delay(430);
+
+stopCar();
+delay(500);
+
+straight(50);
+delay(400);
+
+stopCar();
+delay(500);
+
+turnLeft(50);
+delay(350);
+
+stopCar();
+delay(500);
+
+straight(50);
+delay(400);
+```
+
+[Video Here](https://youtube.com/shorts/o-DNaC8PK3Q)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/o-DNaC8PK3Q"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+# Collabration
+I referenced [Lucca’s](https://correial.github.io/LuccaFastRobots/) and [Stephan's](https://fast.synthghost.com//) site for code debugging and graph formatting. I used ChatGPT to help with oscilloscope and analogWrite.
