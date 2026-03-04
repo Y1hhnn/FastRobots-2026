@@ -83,4 +83,51 @@ The complementary output signal remained near 0 V when inactive, confirming that
 
 Since the average voltage delivered to the motor is proportional to the PWM duty cycle, increasing the duty cycle increases the effective power delivered to the motor. The oscilloscope measurements demonstrates that I can regulate the power supplied to the motor through PWM control.
 
-## 
+## Motor Driver and Battery Integration
+
+After verifying the PWM control signals, I soldered the motor driver to the battery connector to provide a stable power supply for the motors. I used an 850 mAh battery to power the motor driver while the Artemis remained powered separately.
+
+Without external power supply, I was able to drive the motor in both forward and reverse directions. The motor responded correctly to the control signals, confirming that the driver and battery were functioning as expected.
+
+[Video Here](https://youtube.com/shorts/5YVmQpcQIyM)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/5YVmQpcQIyM"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+I repeated the same process for the second motor and motor driver.
+
+Both motors were powered using a single 850 mAh battery, and the battery was able to supply sufficient current for both motors simultaneously. 
+
+[Video Here](https://youtube.com/shorts/ZjpWDv8E-fE)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/ZjpWDv8E-fE"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+After verifying that both motors worked individually, I installed all components inside the car chassis, including the Artemis board, motor drivers, battery, and wiring. I then tested the robot by running it on the ground.
+
+[Video Here](https://youtube.com/shorts/gppflGoTF0Q)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/gppflGoTF0Q"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+When moving forward, the robot was able to drive roughly in a straight line, although some slight deviation was present due to differences between the motors.
+
+However, when the control algorithm commanded the robot to move in reverse, the robot did not move backward as expected. Instead, it rotated approximately 360 degrees before continuing to move forward. This behavior indicates that the motors are not perfectly balanced and that calibration of the motor speeds or PWM values will be necessary to achieve stable and symmetric motion.

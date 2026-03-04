@@ -31,6 +31,8 @@ A limitation of this configuration is that the robot will not detect obstacles o
 
 ## Wiring
 
+Rather than being soldered, I2C sensors should have detachable connections to the bus. This allows for easy replacement or reconfiguration. Batteries also use detachable connectors, such as JST, so they can be safely removed for charging.
+
 In terms of hardware layout, the IMU should be mounted near the center of the robot to improve measurement stability. Since the Artemis board and battery are also located near the center, a 50 mm cable is sufficient for connections between the IMU, breakout board, and Artemis. The two ToF sensors will require 100 mm cables so they can be mounted near the edges of the chassis. The wires will be soldered from the back side of the ToF boards to reduce mechanical interference and improve cable management.
 
 {{ image(path="content/posts/lab3/sketch.png", alt="sketch", width=600, class="center" )}}
