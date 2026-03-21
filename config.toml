@@ -1,5 +1,5 @@
 # The URL the site will be built for
-base_url = "https://github.com/Y1hhnn/FastRobots-2026/"
+base_url = "https://y1hhnn.github.io/FastRobots-2026/"
 
 title = "ECE4160 Fast Robots"
 
@@ -22,7 +22,7 @@ theme = "ayu-dark"
 [extra]
 theme = "auto"
 socials = [
-  { name = "github", url = "https://github.com/Y1hhnn/FastRobots-2026.git", icon = "github" },
+  { name = "github", url = "https://github.com/Y1hhnn/ble_robot_1.4.git", icon = "github" },
 ]
 menu = [
   { name = "/posts", url = "/posts", weight = 1 },
