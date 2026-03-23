@@ -32,18 +32,18 @@ ICM_20948_I2C myICM;
 //////////// ICM Sensor ////////////
 
 //////////// TOF Sensor ////////////
-#define XSHUT_PIN A3 //// XSHUT pin for the second sensor
+#define XSHUT_PIN A2 //// XSHUT pin for the second sensor
 SFEVL53L1X distanceSensor1;
 SFEVL53L1X distanceSensor2;
 //////////// TOF Sensor ////////////
 
 //////////// Motors ////////////
-#define LEFT_MOTOR_IN1 4
-#define LEFT_MOTOR_IN2 5
-#define RIGHT_MOTOR_IN1 7
-#define RIGHT_MOTOR_IN2 6
+#define LEFT_MOTOR_IN1 11
+#define LEFT_MOTOR_IN2 12
+#define RIGHT_MOTOR_IN1 13
+#define RIGHT_MOTOR_IN2 14
 
-int MAX_MOTOR_PCT = 100;
+float MOTOR_SCALE = 1;
 
 // --- Calibration Constants ---
 const int FWD_LEFT_MIN = 29;
@@ -103,7 +103,7 @@ float right_motor_pct = 0.0f;
 // Controller
 bool active = false;
 bool sensor_updated = false;
-float kp = 1.0f;
+float kp = 0.05f;
 float ki = 0.0f;
 float kd = 0.0f;
 int pid_count = 0;
@@ -114,7 +114,13 @@ float sensor_value = 0.0f;
 float error_value = 0.0f;
 float integral_value = 0.0f;
 float derivative_value = 0.0f;
+float raw_derivative_value = 0.0f;
+float raw_integral_value = 0.0f;
 float output_value = 0.0f;
+
+float derivative_filter_alpha = 0.2f;
+float integral_limit = 100.0f;
+float output_limit = 100.0f;
 //////////// Global Variables ////////////
 
 //////////// Sample Data ////////////
@@ -138,12 +144,14 @@ float gyr_z_buffer[SAMPLE_LEN];
 float yaw_buffer[SAMPLE_LEN];
 
 // Motor Buffer
-float left_pct[SAMPLE_LEN];
-float right_pct[SAMPLE_LEN];
+float left_pwm[SAMPLE_LEN];
+float right_pwm[SAMPLE_LEN];
 
 // PID Buffer
 float error_buffer[SAMPLE_LEN];
 float derivative_buffer[SAMPLE_LEN];
+float raw_derivative_buffer[SAMPLE_LEN];
+float raw_integral_buffer[SAMPLE_LEN];
 float integral_buffer[SAMPLE_LEN];
 //////////// Sample Data ////////////
 
@@ -158,7 +166,7 @@ enum CommandTypes
     SET_DURATION,
     SET_SETPOINT,
     SET_MODE,
-    SET_MOTOR_MAX,
+    SET_MOTOR_SCALE,
     SET_EXTRAPOLATION
 };
 //////////// Commands ////////////
@@ -191,18 +199,18 @@ void setup()
 // =========================
 void loop()
 {
-    handleBLE();
+    handleBLE();   
     updateSensors();
     if (active && (sensor_updated || extrapolation))
     {
         runController();
         pid_count++;
-        if (millis() - start_sample_time >= SAMPLE_DURATION)
-            stopRobot();
         sensor_updated = false;
     }
     if (collecting)
         collectSamples();
+    if (millis() - start_sample_time >= SAMPLE_DURATION)
+        stopRobot();
 }
 
 // =========================
@@ -283,6 +291,7 @@ void handleCommand()
             tof2_dist = distanceSensor2.getDistance();
             distanceSensor2.clearInterrupt();
             sensor_updated = true;
+            sensor_value = tof2_dist;
             tof2_time = micros();
             tof2_velocity = 0.0f;
         }
@@ -295,6 +304,7 @@ void handleCommand()
             }
             updateIMU();
             sensor_updated = true;
+            sensor_value = gyr_yaw;
         }
 
         sample_count = 0;
@@ -324,29 +334,31 @@ void handleCommand()
             tx_estring_value.append("T: ");
             tx_estring_value.append((int)time_buffer[i]);
             tx_estring_value.append("|LM: ");
-            tx_estring_value.append(left_pct[i]);
+            tx_estring_value.append(left_pwm[i]);
             tx_estring_value.append("|RM: ");
-            tx_estring_value.append(right_pct[i]);
+            tx_estring_value.append(right_pwm[i]);
             tx_estring_value.append("|E: ");
             tx_estring_value.append(error_buffer[i]);
             tx_estring_value.append("|I: ");
             tx_estring_value.append(integral_buffer[i]);
+            tx_estring_value.append("|RI: ");
+            tx_estring_value.append(integral_buffer[i]);
             tx_estring_value.append("|D: ");
             tx_estring_value.append(derivative_buffer[i]);
+            tx_estring_value.append("|RD: ");
+            tx_estring_value.append(raw_derivative_buffer[i]);
             tx_estring_value.append("|AX: ");
             tx_estring_value.append(acc_x_buffer[i]);
-            tx_estring_value.append("|AY: ");
-            tx_estring_value.append(acc_y_buffer[i]);
-            tx_estring_value.append("|GZ: ");
-            tx_estring_value.append(gyr_z_buffer[i]);
-            tx_estring_value.append("|YW: ");
-            tx_estring_value.append(yaw_buffer[i]);
+            // tx_estring_value.append("|GZ: ");
+            // tx_estring_value.append(gyr_z_buffer[i]);
+            // tx_estring_value.append("|YW: ");
+            // tx_estring_value.append(yaw_buffer[i]);
             tx_estring_value.append("|T1: ");
             tx_estring_value.append(tof_1_buffer[i]);
             tx_estring_value.append("|T2: ");
             tx_estring_value.append(tof_2_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
-            delay(2);
+            delay(3);
         }
         tx_estring_value.clear();
         tx_estring_value.append("Sample Count: ");
@@ -426,15 +438,15 @@ void handleCommand()
         break;
     }
 
-    case SET_MOTOR_MAX:
+    case SET_MOTOR_SCALE:
     {
-        int new_max;
-        success = robot_cmd.get_next_value(new_max);
+        float new_scale;
+        success = robot_cmd.get_next_value(new_scale);
         if (!success)
             return;
-        MAX_MOTOR_PCT = constrain(new_max, 0, 100);
-        Serial.print("Set Max Motor Percent to: ");
-        Serial.println(MAX_MOTOR_PCT);
+        MOTOR_SCALE = new_scale;
+        Serial.print("Set Motor Scale to: ");
+        Serial.println(MOTOR_SCALE);
         break;
     }
 
@@ -470,14 +482,29 @@ void runController()
         return;
     last_control_time = current_control_time;
 
-    sensor_value = getSensorValue();
-    float new_error = setpoint - sensor_value;
+    float new_sensor = getSensorValue();
+    float new_error = setpoint - new_sensor;
 
-    integral_value += new_error * dt;
-    integral_value = constrain(integral_value, -100.0f, 100.0f);
-    derivative_value = (new_error - error_value) / dt;
+    // Avoid derivative Kick
+    raw_derivative_value = -(new_sensor - sensor_value) / dt;
+    // Derivative LPF
+    derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
+
+    // Anti-Windup
+    raw_integral_value = integral_value + new_error * dt;
+    float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
+
+    float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
+    bool saturated_high = unsat_output > output_limit;
+    bool saturated_low = unsat_output < -output_limit;
+    if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
+    {
+        integral_value = new_integral;
+    }
+
     output_value = kp * new_error + ki * integral_value + kd * derivative_value;
     error_value = new_error;
+    sensor_value = new_sensor;
     applyOutput(output_value);
 }
 
@@ -503,10 +530,11 @@ float getSensorValue()
 void applyOutput(float output)
 {
     float power = -output;
-    if (power > MAX_MOTOR_PCT)
-        power = MAX_MOTOR_PCT;
-    if (power < -MAX_MOTOR_PCT)
-        power = -MAX_MOTOR_PCT;
+    power = power * MOTOR_SCALE;
+    if (power > output_limit)
+        power = output_limit;
+    if (power < -output_limit)
+        power = -output_limit;
 
     if (control_mode == MODE_POSITION)
     {
@@ -765,12 +793,14 @@ void collectSamples()
     yaw_buffer[sample_count] = gyr_yaw;
 
     // Motor Buffer
-    left_pct[sample_count] = percentToPWM(left_motor_pct, true);
-    right_pct[sample_count] = percentToPWM(right_motor_pct, false);
+    left_pwm[sample_count] = (left_motor_pct > 0 ? 1 : -1) * percentToPWM(left_motor_pct, true);
+    right_pwm[sample_count] = (right_motor_pct > 0 ? 1 : -1) * percentToPWM(right_motor_pct, false);
 
     // PID Buffer
     error_buffer[sample_count] = error_value;
     derivative_buffer[sample_count] = derivative_value;
+    raw_derivative_buffer[sample_count] = raw_derivative_value;
+    raw_integral_buffer[sample_count] = raw_integral_value;
     integral_buffer[sample_count] = integral_value;
 
     sample_count++;
@@ -781,8 +811,8 @@ void cleanLog()
     for (int i = 0; i < SAMPLE_LEN; i++)
     {
         time_buffer[i] = 0;
-        left_pct[i] = 0.0f;
-        right_pct[i] = 0.0f;
+        left_pwm[i] = 0.0f;
+        right_pwm[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
         acc_y_buffer[i] = 0.0f;
         gyr_z_buffer[i] = 0.0f;
@@ -791,7 +821,9 @@ void cleanLog()
         tof_2_buffer[i] = 0.0f;
         error_buffer[i] = 0.0f;
         derivative_buffer[i] = 0.0f;
+        raw_derivative_buffer[i] = 0.0f;
         integral_buffer[i] = 0.0f;
+        raw_integral_buffer[i] = 0.0f;
     }
 }
 
@@ -827,6 +859,8 @@ void cleanState()
     error_value = 0.0f;
     integral_value = 0.0f;
     derivative_value = 0.0f;
+    raw_derivative_value = 0.0f;
+    raw_integral_value = 0.0f;
     output_value = 0.0f;
     pid_count = 0;
 
@@ -850,6 +884,7 @@ void stopRobot()
         distanceSensor2.stopRanging();
     }
     active = false;
+    digitalWrite(LED_BUILTIN, LOW);
     Serial.println("Stop Robot");
 }
 

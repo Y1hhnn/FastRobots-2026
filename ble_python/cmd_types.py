@@ -9,5 +9,5 @@ class CMD(Enum):
     SET_DURATION = 5
     SET_SETPOINT = 6
     SET_MODE = 7
-    SET_MOTOR_MAX = 8
+    SET_MOTOR_SCALE = 8
     SET_EXTRAPOLATION = 9
