@@ -1,12 +1,14 @@
 #include <SparkFun_VL53L1X.h>
 #include <ICM_20948.h>
-#include "math.h"
 #include <Wire.h>
 
 #include "BLECStringCharacteristic.h"
 #include "EString.h"
 #include "RobotCommand.h"
 #include <ArduinoBLE.h>
+
+#include "math.h"
+#include <BasicLinearAlgebra.h>
 
 //////////// BLE UUIDs ////////////
 #define BLE_UUID_TEST_SERVICE "d427e7cc-c400-4597-b417-d564e20d6600"
@@ -136,6 +138,7 @@ bool collecting = false;
 unsigned long time_buffer[SAMPLE_LEN];
 
 // Sensor Buffers
+float sensor_buffer[SAMPLE_LEN];
 float tof_1_buffer[SAMPLE_LEN];
 float tof_2_buffer[SAMPLE_LEN];
 float acc_x_buffer[SAMPLE_LEN];
@@ -146,6 +149,8 @@ float yaw_buffer[SAMPLE_LEN];
 // Motor Buffer
 float left_pwm[SAMPLE_LEN];
 float right_pwm[SAMPLE_LEN];
+float left_percent[SAMPLE_LEN];
+float right_percent[SAMPLE_LEN];
 
 // PID Buffer
 float error_buffer[SAMPLE_LEN];
@@ -167,7 +172,9 @@ enum CommandTypes
     SET_SETPOINT,
     SET_MODE,
     SET_MOTOR_SCALE,
-    SET_EXTRAPOLATION
+    SET_EXTRAPOLATION,
+    SET_KALMANFILTER,
+    SET_FLIP_DURATION
 };
 //////////// Commands ////////////
 
@@ -175,11 +182,47 @@ enum CommandTypes
 enum ControlMode
 {
     MODE_POSITION,
-    MODE_ORIENTATION
+    MODE_ORIENTATION,
+    MODE_RUSH,
+    MODE_IDLE,
+    MODE_FLIP
 };
+
+enum FlipState
+{
+    FLIP_READY,
+    FLIP_STARTED,
+    FLIP_COMPLETED,
+    FLIP_IDLE
+};
+
 ControlMode control_mode = MODE_POSITION;
+FlipState flip_state = FLIP_READY;
+int flip_duration = 500000;  // in microseconds
+unsigned long flip_time = 0; // in microseconds
 bool extrapolation = true;
+bool kalman_filter = false;
 //////////// Control Mode ////////////
+
+//////////// Kalman Filter ////////////
+using namespace BLA;
+float sys_d = 0.000309f;
+float sys_m = 10.579281f;
+
+Matrix<2, 2> A = {0.0f, 1.0f, 0.0f, -sys_d / sys_m};
+Matrix<2, 1> B = {0.0f, 1.0f / sys_m};
+
+Matrix<2, 1> mu = {0.0f, 0.0f};
+Matrix<2, 2> Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
+
+Matrix<1, 2> C = {1.0f, 0.0f};
+// Process Noise
+Matrix<2, 2> Sigma_u = {97.0f * 97.0f, 0.0f, 0.0f, 97.0f * 97.0f};
+// Measurement Noise
+Matrix<1, 1> Sigma_z = {15.0f * 15.0f};
+
+Matrix<2, 2> I2 = {1.0f, 0.0f, 0.0f, 1.0f};
+//////////// Kalman Filter ////////////
 
 // =========================
 // SETUP
@@ -199,9 +242,9 @@ void setup()
 // =========================
 void loop()
 {
-    handleBLE();   
+    handleBLE();
     updateSensors();
-    if (active && (sensor_updated || extrapolation))
+    if (active && (sensor_updated || extrapolation || kalman_filter))
     {
         runController();
         pid_count++;
@@ -209,7 +252,7 @@ void loop()
     }
     if (collecting)
         collectSamples();
-    if (millis() - start_sample_time >= SAMPLE_DURATION)
+    if (active && millis() - start_sample_time >= SAMPLE_DURATION)
         stopRobot();
 }
 
@@ -278,7 +321,8 @@ void handleCommand()
         cleanLog();
         cleanState();
 
-        if (control_mode == MODE_POSITION)
+        if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
+            control_mode == MODE_RUSH || control_mode == MODE_IDLE)
         {
             distanceSensor2.stopRanging();
             // distanceSensor1.startRanging();
@@ -290,12 +334,21 @@ void handleCommand()
             }
             tof2_dist = distanceSensor2.getDistance();
             distanceSensor2.clearInterrupt();
+            if (control_mode == MODE_FLIP)
+            {
+                flip_state = (tof2_dist < setpoint) ? FLIP_IDLE : FLIP_READY;
+            }
             sensor_updated = true;
             sensor_value = tof2_dist;
             tof2_time = micros();
             tof2_velocity = 0.0f;
+
+            // reset Kalman Filter state
+            mu(0, 0) = tof2_dist;
+            mu(1, 0) = 0.0f;
+            Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
         }
-        else if (control_mode == MODE_ORIENTATION)
+        if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE)
         {
             imu_init = true;
             while (!myICM.dataReady())
@@ -333,30 +386,36 @@ void handleCommand()
             tx_estring_value.clear();
             tx_estring_value.append("T: ");
             tx_estring_value.append((int)time_buffer[i]);
-            tx_estring_value.append("|LM: ");
+            tx_estring_value.append("|LPWM: ");
             tx_estring_value.append(left_pwm[i]);
-            tx_estring_value.append("|RM: ");
+            tx_estring_value.append("|RPWM: ");
             tx_estring_value.append(right_pwm[i]);
-            tx_estring_value.append("|E: ");
-            tx_estring_value.append(error_buffer[i]);
-            tx_estring_value.append("|I: ");
-            tx_estring_value.append(integral_buffer[i]);
-            tx_estring_value.append("|RI: ");
-            tx_estring_value.append(integral_buffer[i]);
-            tx_estring_value.append("|D: ");
-            tx_estring_value.append(derivative_buffer[i]);
-            tx_estring_value.append("|RD: ");
-            tx_estring_value.append(raw_derivative_buffer[i]);
+            tx_estring_value.append("|LPEC: ");
+            tx_estring_value.append(left_percent[i]);
+            tx_estring_value.append("|RPEC: ");
+            tx_estring_value.append(right_percent[i]);
+            // tx_estring_value.append("|E: ");
+            // tx_estring_value.append(error_buffer[i]);
+            // tx_estring_value.append("|I: ");
+            // tx_estring_value.append(integral_buffer[i]);
+            // tx_estring_value.append("|RI: ");
+            // tx_estring_value.append(raw_integral_buffer[i]);
+            // tx_estring_value.append("|D: ");
+            // tx_estring_value.append(derivative_buffer[i]);
+            // tx_estring_value.append("|RD: ");
+            // tx_estring_value.append(raw_derivative_buffer[i]);
             tx_estring_value.append("|AX: ");
             tx_estring_value.append(acc_x_buffer[i]);
             // tx_estring_value.append("|GZ: ");
             // tx_estring_value.append(gyr_z_buffer[i]);
             // tx_estring_value.append("|YW: ");
             // tx_estring_value.append(yaw_buffer[i]);
-            tx_estring_value.append("|T1: ");
-            tx_estring_value.append(tof_1_buffer[i]);
+            // tx_estring_value.append("|T1: ");
+            // tx_estring_value.append(tof_1_buffer[i]);
             tx_estring_value.append("|T2: ");
             tx_estring_value.append(tof_2_buffer[i]);
+            tx_estring_value.append("|S: ");
+            tx_estring_value.append(sensor_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
             delay(3);
         }
@@ -431,6 +490,16 @@ void handleCommand()
         case MODE_ORIENTATION:
             control_mode = MODE_ORIENTATION;
             break;
+        case MODE_RUSH:
+            control_mode = MODE_RUSH;
+            break;
+        case MODE_FLIP:
+            control_mode = MODE_FLIP;
+            break;
+        case MODE_IDLE:
+            control_mode = MODE_IDLE;
+            break;
+
         default:
             Serial.print("Invalid Control Mode: ");
             Serial.println(new_mode);
@@ -457,8 +526,35 @@ void handleCommand()
         if (!success)
             return;
         extrapolation = (extrapolation_int != 0);
+        kalman_filter = (extrapolation_int == 0);
         Serial.print("Set Extrapolation to: ");
         Serial.println(extrapolation ? "True" : "False");
+        break;
+    }
+
+    case SET_KALMANFILTER:
+    {
+        int kalman_filter_int;
+        success = robot_cmd.get_next_value(kalman_filter_int);
+        if (!success)
+            return;
+        kalman_filter = (kalman_filter_int != 0);
+        extrapolation = (kalman_filter_int == 0);
+        Serial.print("Set Kalman Filter to: ");
+        Serial.println(kalman_filter ? "True" : "False");
+        break;
+    }
+
+    case SET_FLIP_DURATION:
+    {
+        int new_flip_duration;
+        success = robot_cmd.get_next_value(new_flip_duration);
+        if (!success)
+            return;
+        flip_duration = new_flip_duration;
+        Serial.print("Set Flip Duration to: ");
+        Serial.print(flip_duration);
+        Serial.println(" microseconds");
         break;
     }
 
@@ -482,41 +578,149 @@ void runController()
         return;
     last_control_time = current_control_time;
 
-    float new_sensor = getSensorValue();
-    float new_error = setpoint - new_sensor;
-
-    // Avoid derivative Kick
-    raw_derivative_value = -(new_sensor - sensor_value) / dt;
-    // Derivative LPF
-    derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
-
-    // Anti-Windup
-    raw_integral_value = integral_value + new_error * dt;
-    float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
-
-    float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
-    bool saturated_high = unsat_output > output_limit;
-    bool saturated_low = unsat_output < -output_limit;
-    if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
+    switch (control_mode)
     {
-        integral_value = new_integral;
+    case MODE_POSITION:
+    {
+        float new_sensor = getSensorValue(dt);
+        float new_error = new_sensor - setpoint;
+
+        if (kalman_filter)
+        {
+            derivative_value = mu(1, 0);
+        }
+        else
+        {
+            // Avoid derivative Kick
+            raw_derivative_value = (new_error - error_value) / dt;
+            // Derivative LPF
+            derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
+        }
+
+        // Anti-Windup
+        raw_integral_value = integral_value + new_error * dt;
+        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
+
+        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
+        bool saturated_high = unsat_output > output_limit;
+        bool saturated_low = unsat_output < -output_limit;
+        if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
+        {
+            integral_value = new_integral;
+        }
+        output_value = kp * new_error + ki * integral_value + kd * derivative_value;
+        error_value = new_error;
+        sensor_value = new_sensor;
+        break;
     }
 
-    output_value = kp * new_error + ki * integral_value + kd * derivative_value;
-    error_value = new_error;
-    sensor_value = new_sensor;
+    case MODE_ORIENTATION:
+    {
+        float new_sensor = getSensorValue(dt);
+        float new_error = new_sensor - setpoint;
+        break;
+    }
+
+    case MODE_RUSH:
+    {
+        float new_sensor = getSensorValue(dt);
+        sensor_value = new_sensor;
+        float new_error = new_sensor - setpoint;
+        // if (new_error > 0)
+        output_value = 100.0f;
+        // else
+        //     output_value = 0.0f;
+
+        break;
+    }
+
+    case MODE_IDLE:
+    {
+        output_value = 0.0f;
+        break;
+    }
+
+    case MODE_FLIP:
+    {
+        float new_sensor = getSensorValue(dt);
+        float new_error = setpoint - new_sensor;
+
+        sensor_value = new_sensor;
+        error_value = new_error;
+        raw_derivative_value = 0.0f;
+        derivative_value = 0.0f;
+        raw_integral_value = 0.0f;
+        integral_value = 0.0f;
+
+        if (flip_state == FLIP_READY)
+        {
+            if (new_error > 0)
+            {
+                flip_state = FLIP_STARTED;
+                flip_time = current_control_time;
+                output_value = -100;
+                break;
+            }
+        }
+        if (flip_state == FLIP_STARTED)
+        {
+            if (current_control_time - flip_time > flip_duration)
+            {
+                flip_state = FLIP_COMPLETED;
+                output_value = 100;
+                break;
+            }
+            output_value = -100;
+        }
+        if (flip_state == FLIP_COMPLETED)
+        {
+            output_value = 100;
+        }
+        break;
+    }
+
+    default:
+    {
+        break;
+    }
+    }
+
     applyOutput(output_value);
 }
 
-float getSensorValue()
+float getSensorValue(float dt)
 {
-    if (control_mode == MODE_POSITION)
+    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP || control_mode == MODE_RUSH)
     {
         if (extrapolation)
         {
             unsigned long current_time = micros();
             float extrapolated_dist = tof2_dist + tof2_velocity * ((current_time - tof2_time) / 1.e6);
             return extrapolated_dist;
+        }
+        else if (kalman_filter)
+        {
+            Matrix<2, 2> Ad = I2 + A * dt;
+            Matrix<2, 1> Bd = B * dt;
+            float u_t = output_value / 100.0f;
+            Matrix<1, 1> u_vec = {u_t};
+            Matrix<2, 1> mu_p = Ad * mu + Bd * u_vec;
+            Matrix<2, 2> Sigma_p = Ad * Sigma * (~Ad) + Sigma_u;
+            if (!sensor_updated)
+            {
+                mu = mu_p;
+                Sigma = Sigma_p;
+                return mu_p(0, 0);
+            }
+            Matrix<1, 1> y = {tof2_dist};
+            Matrix<1, 1> y_m = y - C * mu_p;
+            Matrix<1, 1> S = C * Sigma_p * (~C) + Sigma_z;
+            Matrix<1, 1> S_inv;
+            S_inv(0, 0) = 1.0f / S(0, 0);
+            Matrix<2, 1> K = Sigma_p * (~C) * S_inv;
+            mu = mu_p + K * y_m;
+            Sigma = (I2 - K * C) * Sigma_p;
+            return mu(0, 0);
         }
         return tof2_dist;
     }
@@ -529,14 +733,14 @@ float getSensorValue()
 
 void applyOutput(float output)
 {
-    float power = -output;
-    power = power * MOTOR_SCALE;
+    float power = output * MOTOR_SCALE;
     if (power > output_limit)
         power = output_limit;
     if (power < -output_limit)
         power = -output_limit;
 
-    if (control_mode == MODE_POSITION)
+    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
+        control_mode == MODE_RUSH || control_mode == MODE_IDLE)
     {
         left_motor_pct = power;
         right_motor_pct = power;
@@ -592,7 +796,8 @@ void updateSensors()
             distanceSensor2.clearInterrupt();
         }
         tof_count++;
-        if (control_mode == MODE_POSITION)
+        if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
+            control_mode == MODE_RUSH || control_mode == MODE_IDLE)
             sensor_updated = true;
     }
 }
@@ -700,7 +905,7 @@ int percentToPWM(float percent, bool isLeft)
         return 0;
 
     bool forward = (percent > 0);
-    float p = abs(percent) / 100.0f;
+    float p = fabsf(percent) / 100.0f;
 
     if (isLeft)
     {
@@ -785,16 +990,19 @@ void collectSamples()
     time_buffer[sample_count] = millis() - start_sample_time;
 
     // Sensor Buffers
-    tof_1_buffer[sample_count] = tof1_dist;
+    sensor_buffer[sample_count] = sensor_value;
+    // tof_1_buffer[sample_count] = tof1_dist;
     tof_2_buffer[sample_count] = tof2_dist;
     acc_x_buffer[sample_count] = acc_x;
-    acc_y_buffer[sample_count] = acc_y;
-    gyr_z_buffer[sample_count] = gyr_z;
-    yaw_buffer[sample_count] = gyr_yaw;
+    // acc_y_buffer[sample_count] = acc_y;
+    // gyr_z_buffer[sample_count] = gyr_z;
+    // yaw_buffer[sample_count] = gyr_yaw;
 
     // Motor Buffer
     left_pwm[sample_count] = (left_motor_pct > 0 ? 1 : -1) * percentToPWM(left_motor_pct, true);
     right_pwm[sample_count] = (right_motor_pct > 0 ? 1 : -1) * percentToPWM(right_motor_pct, false);
+    left_percent[sample_count] = left_motor_pct;
+    right_percent[sample_count] = right_motor_pct;
 
     // PID Buffer
     error_buffer[sample_count] = error_value;
@@ -813,11 +1021,14 @@ void cleanLog()
         time_buffer[i] = 0;
         left_pwm[i] = 0.0f;
         right_pwm[i] = 0.0f;
+        left_percent[i] = 0.0f;
+        right_percent[i] = 0.0f;
+        sensor_buffer[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
-        acc_y_buffer[i] = 0.0f;
-        gyr_z_buffer[i] = 0.0f;
-        yaw_buffer[i] = 0.0f;
-        tof_1_buffer[i] = 0.0f;
+        // acc_y_buffer[i] = 0.0f;
+        // gyr_z_buffer[i] = 0.0f;
+        // yaw_buffer[i] = 0.0f;
+        // tof_1_buffer[i] = 0.0f;
         tof_2_buffer[i] = 0.0f;
         error_buffer[i] = 0.0f;
         derivative_buffer[i] = 0.0f;
@@ -878,14 +1089,14 @@ void stopRobot()
 {
     setMotors(0, 0);
     collecting = false;
-    if (control_mode == MODE_POSITION)
+    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP || control_mode == MODE_RUSH || control_mode == MODE_IDLE)
     {
         // distanceSensor1.stopRanging();
         distanceSensor2.stopRanging();
     }
     active = false;
     digitalWrite(LED_BUILTIN, LOW);
-    Serial.println("Stop Robot");
+    Serial.println("Stopped Robot");
 }
 
 void setupBle()
@@ -966,20 +1177,20 @@ void setupICM()
 
 void setupToF()
 {
-    // Turn off Sensor 2 to prevent I2C address conflicts
-    pinMode(XSHUT_PIN, OUTPUT);
-    digitalWrite(XSHUT_PIN, LOW);
-    delay(10);
+    // // Turn off Sensor 2 to prevent I2C address conflicts
+    // pinMode(XSHUT_PIN, OUTPUT);
+    // digitalWrite(XSHUT_PIN, LOW);
+    // delay(10);
 
-    // Initialize Sensor 1
-    while (distanceSensor1.begin(WIRE_PORT) != 0)
-    {
-        SERIAL_PORT.println("ToF Sensor 1 failed to begin. Retrying in 500ms...");
-        delay(500);
-    }
+    // // Initialize Sensor 1
+    // while (distanceSensor1.begin(WIRE_PORT) != 0)
+    // {
+    //     SERIAL_PORT.println("ToF Sensor 1 failed to begin. Retrying in 500ms...");
+    //     delay(500);
+    // }
 
-    // Change Sensor 1's I2C address (Default is 0x29, we change it to 0x2A)
-    distanceSensor1.setI2CAddress(0x2A << 1);
+    // // Change Sensor 1's I2C address (Default is 0x29, we change it to 0x2A)
+    // distanceSensor1.setI2CAddress(0x2A << 1);
 
     // Turn on Sensor 2
     digitalWrite(XSHUT_PIN, HIGH);
@@ -992,7 +1203,7 @@ void setupToF()
         delay(500);
     }
 
-    distanceSensor1.setDistanceModeLong();
+    // distanceSensor1.setDistanceModeLong();
     distanceSensor2.setDistanceModeLong();
 
     SERIAL_PORT.println("Both ToF Sensors online!");
