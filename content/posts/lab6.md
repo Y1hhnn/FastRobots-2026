@@ -257,7 +257,7 @@ To solve the overshoot, I introduced the derivative term, achieving the best tun
     style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
   </iframe>
 </div>
-
+ 
 {{ image(path="content/posts/lab6/2.5_0_0.25.png", alt="PD-Control", width=700, class="center" )}}
 
 According to the plot, the overshoot problem has been solved. Even if it started at -40°, it returned to 0 with no oscillation.
