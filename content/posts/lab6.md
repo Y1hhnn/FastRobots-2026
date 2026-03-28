@@ -112,11 +112,28 @@ bool updateIMU()
 }
 ```
 
-## Limitation
+## Sampling Time
 
 According to the  [ICM-20948 datashee](https://cdn.sparkfun.com/assets/7/f/e/c/d/DS-000189-ICM-20948-v1.3.pdf), the gyroscope full-scale range (FSR) can be configured to ±250, ±500, ±1000, or ±2000 deg/s with  `GYRO_FS_SEL`. When using the DMP, the default configuration sets the FSR to ±2000 deg/s.
 
 This corresponds to a maximum measurable angular velocity of approximately ±2000 °/s (≈ ±34.9 rad/s), which is sufficient for our application. In practice, this allows the robot to rotate $5$ times per second without saturating the sensor.
+
+## Range
+
+The yaw angle derived from the DMP is a continuous angle system. I wrote a helper function function to strictly limit the target error to the range between $-180^\circ$ and $+180^\circ$.
+
+```cpp
+float wrapAngle180(float angle)
+{
+    while (angle > 180.0f)
+        angle -= 360.0f;
+    while (angle < -180.0f)
+        angle += 360.0f;
+    return angle;
+}
+
+```
+
 
 # PID Algorithm
 
@@ -282,3 +299,20 @@ To elimiate the steady-state error, I added the integrate term, achieving the be
 {{ image(path="content/posts/lab6/2.5_1.2_0.25.png", alt="PD-Control", width=700, class="center" )}}
 
 The steady-state error is resolved. No matter how far it is knocked (even reaching +60 degrees at 1.5 seconds), it always ends up landing steadily and precisely on the target orientation.
+
+# Discussion
+
+Orientation PID is crucial for future applications:
+- **Navigation**: In reality, the friction on the left and right wheels of a motor is unpredictable. Without intervention, the robot will inevitably deviate from its intended path. Future navigation systems will need to not only make precise turns in place but also maintain a straight course.
+- **Stunts**: To do drift, we can set the orientation target to $360^\circ$ while moving forward.
+
+To add orientation control while the robot is driving forward or backward, a mixer is needed to add the forward speed and the turning speed together.
+
+```cpp
+left_motor_pct = forward_speed + turn_power;
+right_motor_pct = forward_speed -  turn_power;
+```
+
+Also, we need to real-time update the setpoint. In future maze navigation or path planning, a robot cannot stop and restart every time it turns. It needs to dynamically receive a series of waypoints. 
+
+My system architecture already supports this. Using the BLE SET_SETPOINT command, the host computer (Python) can instantly send the new target angle to the microcontroller while the robot is running at full speed. The PID controller will adapt and immediately calculate the new error, driving the robot to turn toward the next target.
