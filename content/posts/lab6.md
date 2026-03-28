@@ -310,9 +310,9 @@ To add orientation control while the robot is driving forward or backward, a mix
 
 ```cpp
 left_motor_pct = forward_speed + turn_power;
-right_motor_pct = forward_speed -  turn_power;
+right_motor_pct = forward_speed - turn_power;
 ```
 
 Also, we need to real-time update the setpoint. In future maze navigation or path planning, a robot cannot stop and restart every time it turns. It needs to dynamically receive a series of waypoints. 
 
-My system architecture already supports this. Using the BLE SET_SETPOINT command, the host computer (Python) can instantly send the new target angle to the microcontroller while the robot is running at full speed. The PID controller will adapt and immediately calculate the new error, driving the robot to turn toward the next target.
+My system architecture already supports this. Using the BLE `SET_SETPOINT` command, the host computer (Python) can instantly send the new target angle to the microcontroller while the robot is running at full speed. The PID controller will adapt and immediately calculate the new error, driving the robot to turn toward the next target.

@@ -77,7 +77,7 @@ Sigma = np.array([[100**2, 0],[0, 100**2]])
 ```
 which reflects a relatively high initial uncertainty in both position and velocity estimates, allowing the filter to rely more on incoming measurements during the initial phase.
 
-FFinally, the Kalman Filter is implemented following the standard predict-update formulation, where the `update` parameter controls whether a measurement update is performed or only the prediction step is executed:
+Finally, the Kalman Filter is implemented following the standard predict-update formulation, where the `update` parameter controls whether a measurement update is performed or only the prediction step is executed:
 
 ```python
 def kf(mu, sigma, u, y, update=True):
@@ -137,10 +137,28 @@ Therefore, the Kalman Filter significantly improves state estimation compared to
 
 {{ image(path="content/posts/lab7/100pct_3m_digital.png", alt="100pct_3m_digital", width=1000, class="center" )}}
 
+## Parameters Discussion
+
+- **Drag $d$ and Momentum $m$ Coefficients**: tell the filter how fast and how far the robot should be traveling at a given PWM level. 
+- **Process Noise Covariance Matrix $\Sigma_u$**: confidence for the mathematical state-space model. 
+    - If the model is overconfidence ($\Sigma_u$ too small), it will disregard the sensor's actual readings and lead to large bias.  
+    {{ image(path="content/posts/lab7/small_sigma_mu.png", alt="small_sigma_mu", width=600, class="center" )}}
+
+    - If the model is underconfidence ($\Sigma_u$ too large),it rduced to a simple sensor-based prediction model (Extrapolation). 
+
+    {{ image(path="content/posts/lab7/large_sigma_mu.png", alt="large_sigma_mu", width=600, class="center" )}}
+
+- **Measurement Noise Covariance $\Sigma_z$**: uncertainty for the ToF sensor. 
+    - If $\Sigma_z$ is set too large, the filter will interpret the sensor data as being full of noise and will ignore new data. This results in an extremely smooth red line, but with significant lag. 
+    {{ image(path="content/posts/lab7/large_sigma_z.png", alt="large_sigma_z", width=600, class="center" )}}
+
+    - If $\Sigma_z$ is set too small, the filter treats every minor fluctuation in the ToF data as valid, thereby negating the purpose of filtering.
+
+    {{ image(path="content/posts/lab7/small_sigma_z.png", alt="small_sigma_z", width=600, class="center" )}}
 
 # Task 4:  Implement the Kalman Filter on the Robot
 
-The global variables define the system dynamics (A, B), state estimate (mu), and uncertainty (Sigma), as well as the process and measurement noise covariances. These parameters are pre-computed from the system identification step and remain constant during execution. The matrices are implemented using the BasicLinearAlgebra library to enable efficient matrix operations on the microcontroller.
+The global variables define the system dynamics ($A, B$), state estimate ($\mu$), and uncertainty ($\Sigma$), as well as the process and measurement noise covariances. These parameters are pre-computed from the system identification step and remain constant during execution. The matrices are implemented using the BasicLinearAlgebra library to enable efficient matrix operations on the microcontroller.
 
 ```python
 #include <BasicLinearAlgebra.h>
