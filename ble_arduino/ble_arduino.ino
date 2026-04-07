@@ -80,15 +80,16 @@ static long previousMillis = 0;
 unsigned long currentMillis = 0;
 
 // IMU
-unsigned long last_imu_time = 0; // in microseconds
 // float last_acc_roll, last_acc_pitch;
 // float last_gyr_roll, last_gyr_pitch;
 // float last_comp_roll, last_comp_pitch;
 // float comp_roll, comp_pitch;
 float acc_x, acc_y;
-float gyr_z, gyr_yaw, gyr_bias_z;
+float gyr_z, dmp_yaw;
+float gyr_z_offset = 0.0f;
+float yaw_offset = 0.0f;
+// float gyr_bias_z;
 int imu_count = 0;
-bool imu_init = true;
 // float filt_alpha = 0.15;
 // float comp_alpha = 0.9;
 
@@ -139,10 +140,10 @@ unsigned long time_buffer[SAMPLE_LEN];
 
 // Sensor Buffers
 float sensor_buffer[SAMPLE_LEN];
-float tof_1_buffer[SAMPLE_LEN];
+// float tof_1_buffer[SAMPLE_LEN];
 float tof_2_buffer[SAMPLE_LEN];
 float acc_x_buffer[SAMPLE_LEN];
-float acc_y_buffer[SAMPLE_LEN];
+// float acc_y_buffer[SAMPLE_LEN];
 float gyr_z_buffer[SAMPLE_LEN];
 float yaw_buffer[SAMPLE_LEN];
 
@@ -350,14 +351,17 @@ void handleCommand()
         }
         if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE)
         {
-            imu_init = true;
-            while (!myICM.dataReady())
+            myICM.resetFIFO();
+            while (!updateIMU())
             {
                 delay(1);
             }
-            updateIMU();
+            yaw_offset = dmp_yaw;
+            gyr_z_offset = gyr_z;
             sensor_updated = true;
-            sensor_value = gyr_yaw;
+            sensor_value = 0.0f;
+            acc_x = 0.0f;
+            last_control_time = micros();
         }
 
         sample_count = 0;
@@ -390,30 +394,30 @@ void handleCommand()
             tx_estring_value.append(left_pwm[i]);
             tx_estring_value.append("|RPWM: ");
             tx_estring_value.append(right_pwm[i]);
-            tx_estring_value.append("|LPEC: ");
-            tx_estring_value.append(left_percent[i]);
-            tx_estring_value.append("|RPEC: ");
-            tx_estring_value.append(right_percent[i]);
-            // tx_estring_value.append("|E: ");
-            // tx_estring_value.append(error_buffer[i]);
-            // tx_estring_value.append("|I: ");
-            // tx_estring_value.append(integral_buffer[i]);
-            // tx_estring_value.append("|RI: ");
-            // tx_estring_value.append(raw_integral_buffer[i]);
-            // tx_estring_value.append("|D: ");
-            // tx_estring_value.append(derivative_buffer[i]);
-            // tx_estring_value.append("|RD: ");
-            // tx_estring_value.append(raw_derivative_buffer[i]);
-            tx_estring_value.append("|AX: ");
-            tx_estring_value.append(acc_x_buffer[i]);
-            // tx_estring_value.append("|GZ: ");
-            // tx_estring_value.append(gyr_z_buffer[i]);
+            // tx_estring_value.append("|LPEC: ");
+            // tx_estring_value.append(left_percent[i]);
+            // tx_estring_value.append("|RPEC: ");
+            // tx_estring_value.append(right_percent[i]);
+            tx_estring_value.append("|E: ");
+            tx_estring_value.append(error_buffer[i]);
+            tx_estring_value.append("|I: ");
+            tx_estring_value.append(integral_buffer[i]);
+            tx_estring_value.append("|RI: ");
+            tx_estring_value.append(raw_integral_buffer[i]);
+            tx_estring_value.append("|D: ");
+            tx_estring_value.append(derivative_buffer[i]);
+            tx_estring_value.append("|RD: ");
+            tx_estring_value.append(raw_derivative_buffer[i]);
+            // tx_estring_value.append("|AX: ");
+            // tx_estring_value.append(acc_x_buffer[i]);
+            tx_estring_value.append("|GZ: ");
+            tx_estring_value.append(gyr_z_buffer[i]);
             // tx_estring_value.append("|YW: ");
             // tx_estring_value.append(yaw_buffer[i]);
             // tx_estring_value.append("|T1: ");
             // tx_estring_value.append(tof_1_buffer[i]);
-            tx_estring_value.append("|T2: ");
-            tx_estring_value.append(tof_2_buffer[i]);
+            // tx_estring_value.append("|T2: ");
+            // tx_estring_value.append(tof_2_buffer[i]);
             tx_estring_value.append("|S: ");
             tx_estring_value.append(sensor_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
@@ -470,7 +474,10 @@ void handleCommand()
         success = robot_cmd.get_next_value(new_setpoint);
         if (!success)
             return;
-        setpoint = new_setpoint;
+        if (control_mode == MODE_ORIENTATION)
+            setpoint = wrapAngle180(new_setpoint);
+        else
+            setpoint = new_setpoint;
         Serial.println("Set Setpoint to: ");
         Serial.print(setpoint);
         break;
@@ -616,8 +623,27 @@ void runController()
 
     case MODE_ORIENTATION:
     {
-        float new_sensor = getSensorValue(dt);
-        float new_error = new_sensor - setpoint;
+        float new_sensor = wrapAngle180(getSensorValue(dt) - yaw_offset);
+        float new_error = wrapAngle180(new_sensor - setpoint);
+
+        // Avoid derivative Kick
+        float delta_angle = wrapAngle180(new_sensor - sensor_value);
+        raw_derivative_value = delta_angle / dt;
+        // Derivative LPF
+        derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
+        // Anti-Windup
+        raw_integral_value = integral_value + new_error * dt;
+        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
+        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
+        bool saturated_high = unsat_output > output_limit;
+        bool saturated_low = unsat_output < -output_limit;
+        if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
+        {
+            integral_value = new_integral;
+        }
+        output_value = -(kp * new_error + ki * integral_value + kd * derivative_value);
+        error_value = new_error;
+        sensor_value = new_sensor;
         break;
     }
 
@@ -726,7 +752,7 @@ float getSensorValue(float dt)
     }
     else if (control_mode == MODE_ORIENTATION)
     {
-        return gyr_yaw;
+        return dmp_yaw;
     }
     return 0.0f;
 }
@@ -765,9 +791,8 @@ void applyOutput(float output)
 // =========================
 void updateSensors()
 {
-    if (myICM.dataReady())
+    if (updateIMU())
     {
-        updateIMU();
         if (control_mode == MODE_ORIENTATION)
             sensor_updated = true;
     }
@@ -802,54 +827,37 @@ void updateSensors()
     }
 }
 
-void updateIMU()
+bool updateIMU()
 {
-    unsigned long current_imu_time = micros();
-    myICM.getAGMT();
-    if (imu_init)
+    if (myICM.dataReady())
     {
+        myICM.getAGMT();
         acc_x = myICM.accX();
-        acc_y = myICM.accY();
-        gyr_z = myICM.gyrZ();
-        gyr_yaw = 0.0f;
-        imu_init = false;
+        gyr_z = myICM.gyrZ() - gyr_z_offset;
     }
-    else
-    {
-        acc_x = myICM.accX();
-        acc_y = myICM.accY();
-        gyr_z = myICM.gyrZ();
-        float dt = (current_imu_time - last_imu_time) / 1.e6;
-        gyr_yaw += (gyr_z - gyr_bias_z) * dt;
-    }
-    last_imu_time = current_imu_time;
-    imu_count++;
 
-    // acc_roll = atan2(myICM.accY(), sqrt(myICM.accX()*myICM.accX() + myICM.accZ()*myICM.accZ())) * 180 / M_PI;
-    // acc_pitch = atan2(myICM.accX(), sqrt(myICM.accY()*myICM.accY() + myICM.accZ()*myICM.accZ()))* 180 / M_PI;
-    // if(imu_init){
-    //     gyr_roll =0.0f;
-    //     gyr_pitch = 0.0f;
-    //     comp_roll = acc_roll;
-    //     comp_pitch = acc_pitch;
-    //     imu_init = false;
-    // }
-    // else
-    // {
-    //     float dt = (current_imu_time - last_imu_time)/1.e6;
-    //     acc_roll = filt_alpha * acc_roll + (1 - filt_alpha) * last_acc_roll;
-    //     acc_pitch = filt_alpha * acc_pitch + (1 - filt_alpha) * last_acc_pitch;
-    //     gyr_roll = last_gyr_roll + myICM.gyrX()*dt;
-    //     gyr_pitch = last_gyr_pitch - myICM.gyrY()*dt;
-    //     comp_roll = (1-comp_alpha) * acc_roll + comp_alpha * (last_comp_roll + myICM.gyrX()*dt);
-    //     comp_pitch = (1-comp_alpha) * acc_pitch + comp_alpha * (last_comp_pitch - myICM.gyrY()*dt);
-    // }
-    // last_acc_roll = acc_roll;
-    // last_acc_pitch = acc_pitch;
-    // last_gyr_roll = gyr_roll;
-    // last_gyr_pitch = gyr_pitch;
-    // last_comp_roll = comp_roll;
-    // last_comp_pitch = comp_pitch;
+    icm_20948_DMP_data_t data;
+    myICM.readDMPdataFromFIFO(&data);
+    if ((myICM.status == ICM_20948_Stat_Ok) || (myICM.status == ICM_20948_Stat_FIFOMoreDataAvail))
+    {
+        if ((data.header & DMP_header_bitmap_Quat6) > 0)
+        {
+            double q1 = ((double)data.Quat6.Data.Q1) / 1073741824.0; // X
+            double q2 = ((double)data.Quat6.Data.Q2) / 1073741824.0; // Y
+            double q3 = ((double)data.Quat6.Data.Q3) / 1073741824.0; // Z
+
+            double q0_sq = 1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3));
+            if (q0_sq < 0.0)
+                q0_sq = 0.0;
+            double q0 = sqrt(q0_sq); // W
+            dmp_yaw = atan2(2.0 * (q0 * q3 + q1 * q2), 1.0 - 2.0 * (q2 * q2 + q3 * q3)) * 180.0 / PI;
+
+            imu_count++;
+
+            return true;
+        }
+    }
+    return false;
 }
 
 // =========================
@@ -995,8 +1003,8 @@ void collectSamples()
     tof_2_buffer[sample_count] = tof2_dist;
     acc_x_buffer[sample_count] = acc_x;
     // acc_y_buffer[sample_count] = acc_y;
-    // gyr_z_buffer[sample_count] = gyr_z;
-    // yaw_buffer[sample_count] = gyr_yaw;
+    gyr_z_buffer[sample_count] = gyr_z;
+    yaw_buffer[sample_count] = dmp_yaw;
 
     // Motor Buffer
     left_pwm[sample_count] = (left_motor_pct > 0 ? 1 : -1) * percentToPWM(left_motor_pct, true);
@@ -1026,8 +1034,8 @@ void cleanLog()
         sensor_buffer[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
         // acc_y_buffer[i] = 0.0f;
-        // gyr_z_buffer[i] = 0.0f;
-        // yaw_buffer[i] = 0.0f;
+        gyr_z_buffer[i] = 0.0f;
+        yaw_buffer[i] = 0.0f;
         // tof_1_buffer[i] = 0.0f;
         tof_2_buffer[i] = 0.0f;
         error_buffer[i] = 0.0f;
@@ -1041,13 +1049,11 @@ void cleanLog()
 void cleanState()
 {
     // IMU
-    last_imu_time = 0; // in microseconds
     acc_x = 0.0f;
     acc_y = 0.0f;
     gyr_z = 0.0f;
-    gyr_yaw = 0.0f;
-    gyr_bias_z = 0.0f;
-    imu_init = true;
+    dmp_yaw = 0.0f;
+    gyr_z_offset = 0.0f;
     imu_count = 0;
 
     // TOF
@@ -1169,10 +1175,32 @@ void setupICM()
         }
         else
         {
-            calibrateGyroBias();
+            // calibrateGyroBias();
             initialized = true;
         }
     }
+
+    SERIAL_PORT.println("Initializing DMP...");
+    bool success = true;
+    // Initialize the DMP. initializeDMP is a weak function. You can overwrite it if you want to e.g. to change the sample rate
+    success &= (myICM.initializeDMP() == ICM_20948_Stat_Ok);
+    // Enable the DMP orientation sensor
+    success &= (myICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR) == ICM_20948_Stat_Ok);
+    // Set DMP ODR to to the maximum
+    success &= (myICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 0) == ICM_20948_Stat_Ok);
+    // Enable the FIFO
+    success &= (myICM.enableFIFO() == ICM_20948_Stat_Ok);
+    // Enable the DMP
+    success &= (myICM.enableDMP() == ICM_20948_Stat_Ok);
+    // Reset DMP
+    success &= (myICM.resetDMP() == ICM_20948_Stat_Ok);
+    // Reset FIFO
+    success &= (myICM.resetFIFO() == ICM_20948_Stat_Ok);
+    // Check success
+    if (success)
+        SERIAL_PORT.println(F("DMP enabled!"));
+    else
+        SERIAL_PORT.println("DMP initialization failed!");
 }
 
 void setupToF()
@@ -1220,20 +1248,29 @@ void setupMotors()
     delay(2000);
 }
 
-void calibrateGyroBias()
+// void calibrateGyroBias()
+// {
+//     const int N = 500;
+//     float sum = 0;
+//     for (int i = 0; i < N; i++)
+//     {
+//         while (!myICM.dataReady())
+//         {
+//         }
+//         myICM.getAGMT();
+//         sum += myICM.gyrZ();
+//         delay(5);
+//     }
+//     gyr_bias_z = sum / N;
+// }
+
+float wrapAngle180(float angle)
 {
-    const int N = 500;
-    float sum = 0;
-    for (int i = 0; i < N; i++)
-    {
-        while (!myICM.dataReady())
-        {
-        }
-        myICM.getAGMT();
-        sum += myICM.gyrZ();
-        delay(5);
-    }
-    gyr_bias_z = sum / N;
+    while (angle > 180.0f)
+        angle -= 360.0f;
+    while (angle < -180.0f)
+        angle += 360.0f;
+    return angle;
 }
 
 void led_blink(int times, int delay_time)
