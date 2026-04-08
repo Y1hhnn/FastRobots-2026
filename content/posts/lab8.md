@@ -3,7 +3,12 @@ title = "Lab 8: Stunts!"
 date = "2026-04-08"
 +++
 
+The objective of this lab is to integrate sensing, control, and actuation into a unified system capable of executing a fast “flip” stunt, where the robot drives forward at high speed, performs a flip near the wall, and returns past the starting line.
+
 # PID Controller
+For my previous lab code, there's a single shared PID state that can only do distance OR orientation at a time. For the flip stunt, however, forward motion and heading stabilization needed to operate simultaneously, so I refactored the controller into a PIDController struct that encapsulates the PID gains, internal states, sensor estimation logic, and a reusable compute() method.
+
+The PIDController struct also supports three sensing modes—direct measurement, extrapolation, and Kalman filtering for flexibility.
 
 ```cpp
 struct PIDController
@@ -25,86 +30,51 @@ struct PIDController
         KALMAN
     };
 
-    // Get the best sensor estimate based on sensor_mode.
-    float getEstimate(float raw_measurement, bool has_new_measurement, float dt)
-    {
-        switch (sensor_mode)
-        {
-        case KALMAN:
-            kfPredict(dt);
-            if (has_new_measurement)
-                kfUpdate(raw_measurement);
-            return kfPosition();
 
-        case EXTRAPOLATION:
-            return getExtrapolated(micros());
-
-        case DIRECT:
-        default:
-            return raw_measurement;
-        }
-    }
-
-    // --- Helper Functions ---
+    // --- Helper Functions for Kalman Filter  ---
     // ---------------------------------
 
-    // Core PID compute
-    float compute(float new_sensor, float dt, bool wrap_angle = false, bool use_kf_derivative = false)
-    {
-        float new_error;
-        float delta_sensor;
+    // --- Helper Functions for Extrapolation  ---
+    // ---------------------------------
 
-        if (wrap_angle)
-        {
-            new_error = wrapAngle180(new_sensor - setpoint);
-            delta_sensor = wrapAngle180(new_sensor - sensor_value);
-        }
-        else
-        {
-            new_error = new_sensor - setpoint;
-            delta_sensor = new_sensor - sensor_value;
-        }
+    // --- Unified Sensor Estimate ---
+    float getEstimate(float raw_measurement, bool has_new_measurement, float dt);
+        // DIRECT:        returns raw_measurement
+        // EXTRAPOLATION: returns getExtrapolated(micros())
+        // KALMAN:        calls kfPredict(dt), kfUpdate if new, returns kfPosition()
 
-        // Derivative
-        if (use_kf_derivative)
-        {
-            // Use Kalman velocity estimate directly
-            raw_derivative_value = kfVelocity();
-            derivative_value = kfVelocity();
-        }
-        else
-        {
-            // Derivative on measurement (avoids derivative kick)
-            raw_derivative_value = delta_sensor / dt;
-            derivative_value = derivative_filter_alpha * raw_derivative_value +
-                               (1.0f - derivative_filter_alpha) * derivative_value;
-        }
 
-        // Integral with anti-windup (conditional integration)
-        raw_integral_value = integral_value + new_error * dt;
-        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
 
-        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
-        bool saturated_high = unsat_output > output_limit;
-        bool saturated_low = unsat_output < -output_limit;
-        if ((!saturated_high && !saturated_low) ||
-            (saturated_high && new_error < 0) ||
-            (saturated_low && new_error > 0))
-        {
-            integral_value = new_integral;
-        }
+    // --- PID Core ---
+    void reset();
+        // Zeros all PID state + extrapolation state, count = 0
+        // (Does NOT reset gains, setpoint, tuning params, or KF model)
 
-        output_value = constrain(kp * new_error + ki * integral_value + kd * derivative_value,
-                                 -output_limit, output_limit);
-        error_value = new_error;
-        sensor_value = new_sensor;
-        count++;
-
-        return output_value;
-    }
+    float compute(float new_sensor, float dt, bool wrap_angle = false, bool use_kf_derivative = false);
+        // 1. Error:
+        //      wrap_angle=false → error = new_sensor - setpoint
+        //      wrap_angle=true  → error = wrapAngle180(new_sensor - setpoint)
+        //
+        // 2. Derivative:
+        //      use_kf_derivative=true  → uses kfVelocity() directly
+        //      use_kf_derivative=false → d/dt on measurement + LPF
+        //
+        // 3. Integral:  with conditional anti-windup
+        //      raw  = integral + error × dt
+        //      clamped to [-integral_limit, integral_limit]
+        //      only integrates when output not saturated in error direction
+        //
+        // 4. Output:
+        //      kp·error + ki·integral + kd·derivative
+        //      clamped to [-output_limit, output_limit]
+        //
+        // Returns: output_value
 };
 
 ```
+
+This design allows multiple independent controllers to run in parallel.
+Distance Controller and Orientation Controller can be initialized as following:
 
 ```cpp
 // Distance PID — controls forward/backward via ToF
@@ -113,8 +83,29 @@ PIDController dist_pid;
 PIDController orient_pid;
 ```
 
-# Rush in Straight Line
+I could separately tune forward and angular control like this: 
 
+```cpp
+float estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
+dist_pid.compute(estimate, dt, false, use_kf_d);
+applyLinearOutput(dist_pid.output_value);
+```
+```cpp
+float new_sensor = getOrientationSensorValue();
+orient_pid.compute(new_sensor, dt, true);
+applyAngularOutput(-orient_pid.output_value);
+```
+
+New commands are added for tuning and changing setpoint via BLE:
+- `UPDATE_DIST_PID`, `UPDATE_ORIENT_PID`
+- `SET_DIST_SETPOINT`, `SET_ORIENT_SETPOINT`
+
+# Motor Mixing
+
+To test the controller in a high-speed scenario, I implemented a MODE_RUSH behavior that drives the robot forward aggressively while using the orientation PID loop to maintain a straight trajectory.
+
+In this mode, the forward command is held at a fixed high value, while the angular correction from orient_pid is mixed into the left and right motor commands with opposite signs.
 
 ```cpp
 void runController(){
@@ -143,7 +134,10 @@ void runController(){
     }
     // ---------------------------------
 }
+
 ```
+
+ The robot was tested over a 4 m trajectory at maximum speed. Unlike previous labs (5&  7) where distance PID combined with open-loop orientation control led to significant drift at this range, the current approach achieves substantially improved stability. 
 
 [Video Here](https://youtube.com/shorts/Pp7RTqsx2M0)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
@@ -158,17 +152,33 @@ void runController(){
 
 {{ image(path="content/posts/lab8/rush.png", alt="rush", width=800, class="center" )}}
 
+From the orientation tracking plot, the yaw error remains tightly bounded within approximately ±2°. At the same time, the velocity estimation shows that the robot reaches a peak steady speed of approximately 3.2 m/s (similary to lab7), demonstrating that high-speed performance is maintained without sacrificing stability. 
+
 # Flips
 
+For the flip task, I abandoned closed-loop distance control near the wall and instead applied a fixed, very high PWM command in open loop so that the robot could sprint forward at maximum speed. Heading control is active to keep the robot moving approximately straight toward the target region and backward after flipping.
+
+## Kalman Filter Update
+To improve distance estimation at high speed, I kept the Kalman filter running in an asynchronous update mode. When a new ToF measurement was available, the controller executed both the prediction and update steps. When no new sensor reading was available, it executed only the prediction step, propagating the state estimate forward using the dynamics model and motor input. 
+
+Because the control loop frequency changed significantly in this mode, I updated the discrete-time model accordingly. The control loop now runs at about 100 iterations in 5 seconds, so I set dt = 0.05 s and recomputed the discrete system matrices using
+
 ```cpp
-enum FlipState
-{
-    FLIP_READY,
-    FLIP_STARTED,
-    FLIP_RECOVER,
-    FLIP_RETURN
-};
+Ad = np.eye(2) + dt * A
+Bd = dt * B
 ```
+
+The average steady-state speed, average 90% rise time, and speed at the 90% rise time remained consistent with the values obtained in Lab 7.
+
+## Code Implementation
+
+The flip behavior was implemented as a finite-state machine with four stages: 
+- `FLIP_READY`
+- `FLIP_STARTED`
+- `FLIP_RECOVER`
+- `FLIP_RETURN`
+
+In FLIP_READY, the robot drives forward at maximum power while the orientation PID provides small steering corrections to maintain a straight trajectory. During this phase, the Kalman-filtered distance estimate is monitored continuously. Once the estimated distance falls below the chosen trigger threshold, the robot transitions into the flip phase.
 
 ```cpp
 if (flip_state == FLIP_READY)
@@ -188,6 +198,8 @@ if (flip_state == FLIP_READY)
 }
 ```
 
+In FLIP_STARTED, both motors are immediately driven at full reverse power. So sharp torque change is created to  initiate the flip. The IMU roll angle is used to detect when the robot has rotated enough to confirm that the flip has begun.
+
 ```cpp
 else if (flip_state == FLIP_STARTED)
 {
@@ -202,6 +214,8 @@ else if (flip_state == FLIP_STARTED)
     }
 }
 ```
+
+In FLIP_RECOVER, the motors are temporarily stopped so the robot can complete the rotation and settle after impact. The roll angle is again monitored, and once it approaches an fully rotated posture, the controller transitions to the return phase. At this point, the yaw reference is reset and the Kalman filter is reinitialized using the new measured distance.
 
 ```cpp
 else if (flip_state == FLIP_RECOVER)
@@ -223,6 +237,8 @@ else if (flip_state == FLIP_RECOVER)
 }
 ```
 
+In FLIP_RETURN, the robot drives back at high speed in the opposite direction. Orientation PID is re-enabled so that the robot can maintain a stable heading while retreating away from the wall and crossing back over the starting line.
+
 
 ```cpp
 else if (flip_state == FLIP_RETURN)
@@ -234,6 +250,11 @@ else if (flip_state == FLIP_RETURN)
     setMotors(left_motor_pct, right_motor_pct);
 }
 ```
+
+
+## Lead Time Tuning
+
+Because of otor response delay and the robot’s high forward speed, the robot cannot stop or reverse exactly at the nominal `1 ft (304 mm)` target location in real time.  I tuned the trigger setpoint to `1000 mm`, such that the robot has enough time to process and flip at the target location.
 
 ## Trial 1
 [Video Here](https://youtube.com/shorts/0lrJJ1Pl7HM)
@@ -279,10 +300,19 @@ else if (flip_state == FLIP_RETURN)
 
 {{ image(path="content/posts/lab8/flip3.png", alt="flip3", width=800, class="center" )}}
 
-## Velocity Analysis
+## Flip Results & Discussion
+
+Across three successful trials, the robot consistently achieved a maximum forward speed of approximately $3 m/s$ during the approach phase and about $2 m/s$ during the return phase over a $~3 m$ travel distance. The backward velocity was estimated from the integrated acceleration in the x-direction, since reliable ToF measurements were not available after the flip. The total time for a complete forward–flip–return cycle was approximately $3.5$ seconds.
+
+From the plots, the flip event is clearly captured by a sharp transition in the roll/pitch angle, exceeding the flip detection threshold (~140°), confirming that a full rotation occurred.  After recovery, the robot resumes controlled backward motion with orientation stabilization re-enabled. Orientation tracking remains reasonably bounded despite the aggressive maneuver, indicating that the angular PID controller continues to function effectively.
+
+A key limitation observed in this lab is the use of a single front-facing ToF sensor. Although I tried to align the sensor parallel to the ground, after the flip the sensor often points toward the floor instead of the wall, resulting in invalid or misleading distance readings. This is evident in the distance estimation plots, where the ToF signal becomes unreliable immediately after the flip. As a result, post-flip control relies less on distance feedback and more on open-loop behavior and IMU-based stabilization.
+
+For future improvements, I reconsider  the sensor placement strategy . Instead of mounting a second ToF sensor on the side, a more effective approach would be to mount an additional sensor at the rear of the robot with a slight downward angle. This configuration would allow the robot to maintain valid distance measurements relative to the wall even after flipping, enabling more robust closed-loop control during the return phase.
 
 ## Blooper
 
+Here’s a blooper video where I tried the flip on a smooth floor. The robot ended up drifting around pretty chaotically after the flip, since there wasn’t enough friction to keep it stable. But somehow, it still managed to make its way back and cross the starting line in the end $:)$
 
 [Video Here](https://youtube.com/shorts/gRz22fiRBk0)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
