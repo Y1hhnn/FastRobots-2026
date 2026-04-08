@@ -9,6 +9,7 @@
 
 #include "math.h"
 #include <BasicLinearAlgebra.h>
+using namespace BLA;
 
 //////////// BLE UUIDs ////////////
 #define BLE_UUID_TEST_SERVICE "d427e7cc-c400-4597-b417-d564e20d6600"
@@ -80,51 +81,260 @@ static long previousMillis = 0;
 unsigned long currentMillis = 0;
 
 // IMU
-// float last_acc_roll, last_acc_pitch;
-// float last_gyr_roll, last_gyr_pitch;
-// float last_comp_roll, last_comp_pitch;
-// float comp_roll, comp_pitch;
 float acc_x, acc_y;
 float gyr_z, dmp_yaw;
+// float dmp_pitch = 0.0f;
+float dmp_roll = 0.0f;
 float gyr_z_offset = 0.0f;
 float yaw_offset = 0.0f;
-// float gyr_bias_z;
 int imu_count = 0;
-// float filt_alpha = 0.15;
-// float comp_alpha = 0.9;
 
 // TOF
 float tof1_dist, tof2_dist;
-float tof2_velocity;
 unsigned long tof2_time;
 int tof_count = 0;
 
 // Motor
 float left_motor_pct = 0.0f;
 float right_motor_pct = 0.0f;
-
-// Controller
-bool active = false;
-bool sensor_updated = false;
-float kp = 0.05f;
-float ki = 0.0f;
-float kd = 0.0f;
-int pid_count = 0;
-
-unsigned long last_control_time = 0; // in microseconds
-float setpoint = 0.0f;               // Degree for IMU, cm for TOF
-float sensor_value = 0.0f;
-float error_value = 0.0f;
-float integral_value = 0.0f;
-float derivative_value = 0.0f;
-float raw_derivative_value = 0.0f;
-float raw_integral_value = 0.0f;
-float output_value = 0.0f;
-
-float derivative_filter_alpha = 0.2f;
-float integral_limit = 100.0f;
-float output_limit = 100.0f;
 //////////// Global Variables ////////////
+
+// =================================================================
+// PID Controller
+// =================================================================
+// Self-contained PID with optional Kalman filter and extrapolation
+// for distance estimation. Orientation mode uses direct sensor input.
+// =================================================================
+struct PIDController
+{
+    // --- PID Gains ---
+    float kp = 0.0f;
+    float ki = 0.0f;
+    float kd = 0.0f;
+    float setpoint = 0.0f;
+
+    // --- PID State ---
+    float sensor_value = 0.0f;
+    float error_value = 0.0f;
+    float integral_value = 0.0f;
+    float derivative_value = 0.0f;
+    float raw_derivative_value = 0.0f;
+    float raw_integral_value = 0.0f;
+    float output_value = 0.0f;
+
+    // --- PID Tuning ---
+    float derivative_filter_alpha = 0.2f;
+    float integral_limit = 100.0f;
+    float output_limit = 100.0f;
+
+    int count = 0;
+
+    // --- Sensor Estimation Mode ---
+    enum SensorMode
+    {
+        DIRECT,
+        EXTRAPOLATION,
+        KALMAN
+    };
+    SensorMode sensor_mode = DIRECT;
+
+    // --- Extrapolation State ---
+    float extrap_velocity = 0.0f;
+    float extrap_last_measurement = 0.0f;
+    unsigned long extrap_last_time = 0; // microseconds
+
+    // --- Kalman Filter State ---
+    // 2-state model: [position, velocity]
+    // x_dot = A*x + B*u,  y = C*x
+    Matrix<2, 2> kf_A;
+    Matrix<2, 1> kf_B;
+    Matrix<1, 2> kf_C;
+    Matrix<2, 1> kf_mu;
+    Matrix<2, 2> kf_Sigma;
+    Matrix<2, 2> kf_Sigma_u; // process noise
+    Matrix<1, 1> kf_Sigma_z; // measurement noise
+    Matrix<2, 2> kf_I2;
+
+    // Initialize Kalman filter system model
+    void initKalman(float sys_d, float sys_m, float proc_noise_std, float meas_noise_std)
+    {
+        kf_A = {0.0f, 1.0f, 0.0f, -sys_d / sys_m};
+        kf_B = {0.0f, 1.0f / sys_m};
+        kf_C = {1.0f, 0.0f};
+        kf_Sigma_u = {proc_noise_std * proc_noise_std, 0.0f,
+                      0.0f, proc_noise_std * proc_noise_std};
+        kf_Sigma_z = {meas_noise_std * meas_noise_std};
+        kf_I2 = {1.0f, 0.0f, 0.0f, 1.0f};
+        kf_mu = {0.0f, 0.0f};
+        kf_Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
+    }
+
+    // Reset Kalman filter state to a known position
+    void resetKalman(float initial_pos)
+    {
+        kf_mu(0, 0) = initial_pos;
+        kf_mu(1, 0) = 0.0f;
+        kf_Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
+    }
+
+    // Kalman predict step (call every control loop)
+    void kfPredict(float dt)
+    {
+        Matrix<2, 2> Ad = kf_I2 + kf_A * dt;
+        Matrix<2, 1> Bd = kf_B * dt;
+        float u_t = output_value / 100.0f;
+        Matrix<1, 1> u_vec = {u_t};
+        kf_mu = Ad * kf_mu + Bd * u_vec;
+        kf_Sigma = Ad * kf_Sigma * (~Ad) + kf_Sigma_u;
+    }
+
+    // Kalman update step (call when new measurement arrives)
+    void kfUpdate(float measurement)
+    {
+        Matrix<1, 1> y = {measurement};
+        Matrix<1, 1> y_m = y - kf_C * kf_mu;
+        Matrix<1, 1> S = kf_C * kf_Sigma * (~kf_C) + kf_Sigma_z;
+        Matrix<1, 1> S_inv;
+        S_inv(0, 0) = 1.0f / S(0, 0);
+        Matrix<2, 1> K = kf_Sigma * (~kf_C) * S_inv;
+        kf_mu = kf_mu + K * y_m;
+        kf_Sigma = (kf_I2 - K * kf_C) * kf_Sigma;
+    }
+
+    // Get Kalman position estimate
+    float kfPosition() { return kf_mu(0, 0); }
+    // Get Kalman velocity estimate (useful as derivative)
+    float kfVelocity() { return kf_mu(1, 0); }
+
+    // Feed a new raw measurement for extrapolation tracking
+    void feedMeasurement(float raw, unsigned long time_us)
+    {
+        if (extrap_last_time > 0)
+        {
+            float dt = (time_us - extrap_last_time) / 1.e6f;
+            if (dt > 0)
+                extrap_velocity = (raw - extrap_last_measurement) / dt;
+        }
+        extrap_last_measurement = raw;
+        extrap_last_time = time_us;
+    }
+
+    // Get extrapolated estimate at current time
+    float getExtrapolated(unsigned long current_time_us)
+    {
+        float dt = (current_time_us - extrap_last_time) / 1.e6f;
+        return extrap_last_measurement + extrap_velocity * dt;
+    }
+
+    // Get the best sensor estimate based on sensor_mode.
+    // For KALMAN: call kfPredict before this, then kfUpdate if has_new_measurement.
+    // For EXTRAPOLATION: call feedMeasurement when new data arrives.
+    // For DIRECT: pass raw measurement directly.
+    float getEstimate(float raw_measurement, bool has_new_measurement, float dt)
+    {
+        switch (sensor_mode)
+        {
+        case KALMAN:
+            kfPredict(dt);
+            if (has_new_measurement)
+                kfUpdate(raw_measurement);
+            return kfPosition();
+
+        case EXTRAPOLATION:
+            return getExtrapolated(micros());
+
+        case DIRECT:
+        default:
+            return raw_measurement;
+        }
+    }
+
+    void reset()
+    {
+        sensor_value = 0.0f;
+        error_value = 0.0f;
+        integral_value = 0.0f;
+        derivative_value = 0.0f;
+        raw_derivative_value = 0.0f;
+        raw_integral_value = 0.0f;
+        output_value = 0.0f;
+        count = 0;
+        extrap_velocity = 0.0f;
+        extrap_last_measurement = 0.0f;
+        extrap_last_time = 0;
+    }
+
+    // Core PID compute. Returns output clamped to [-output_limit, output_limit].
+    // If wrap_angle is true, error and derivative use angle wrapping.
+    // If use_kf_derivative is true, use Kalman velocity as derivative instead.
+    float compute(float new_sensor, float dt, bool wrap_angle = false, bool use_kf_derivative = false)
+    {
+        float new_error;
+        float delta_sensor;
+
+        if (wrap_angle)
+        {
+            new_error = wrapAngle180(new_sensor - setpoint);
+            delta_sensor = wrapAngle180(new_sensor - sensor_value);
+        }
+        else
+        {
+            new_error = new_sensor - setpoint;
+            delta_sensor = new_sensor - sensor_value;
+        }
+
+        // Derivative
+        if (use_kf_derivative)
+        {
+            // Use Kalman velocity estimate directly
+            raw_derivative_value = kfVelocity();
+            derivative_value = kfVelocity();
+        }
+        else
+        {
+            // Derivative on measurement (avoids derivative kick)
+            raw_derivative_value = delta_sensor / dt;
+            derivative_value = derivative_filter_alpha * raw_derivative_value +
+                               (1.0f - derivative_filter_alpha) * derivative_value;
+        }
+
+        // Integral with anti-windup (conditional integration)
+        raw_integral_value = integral_value + new_error * dt;
+        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
+
+        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
+        bool saturated_high = unsat_output > output_limit;
+        bool saturated_low = unsat_output < -output_limit;
+        if ((!saturated_high && !saturated_low) ||
+            (saturated_high && new_error < 0) ||
+            (saturated_low && new_error > 0))
+        {
+            integral_value = new_integral;
+        }
+
+        output_value = constrain(kp * new_error + ki * integral_value + kd * derivative_value,
+                                 -output_limit, output_limit);
+        error_value = new_error;
+        sensor_value = new_sensor;
+        count++;
+
+        return output_value;
+    }
+
+    static float wrapAngle180(float angle)
+    {
+        while (angle > 180.0f)
+            angle -= 360.0f;
+        while (angle < -180.0f)
+            angle += 360.0f;
+        return angle;
+    }
+};
+
+// Distance PID — controls forward/backward via ToF
+PIDController dist_pid;
+// Orientation PID — controls turning via IMU yaw
+PIDController orient_pid;
 
 //////////// Sample Data ////////////
 const int SAMPLE_LEN = 1500;
@@ -139,13 +349,12 @@ bool collecting = false;
 unsigned long time_buffer[SAMPLE_LEN];
 
 // Sensor Buffers
-float sensor_buffer[SAMPLE_LEN];
-// float tof_1_buffer[SAMPLE_LEN];
 float tof_2_buffer[SAMPLE_LEN];
 float acc_x_buffer[SAMPLE_LEN];
-// float acc_y_buffer[SAMPLE_LEN];
 float gyr_z_buffer[SAMPLE_LEN];
 float yaw_buffer[SAMPLE_LEN];
+// float pitch_buffer[SAMPLE_LEN];
+float roll_buffer[SAMPLE_LEN];
 
 // Motor Buffer
 float left_pwm[SAMPLE_LEN];
@@ -153,12 +362,15 @@ float right_pwm[SAMPLE_LEN];
 float left_percent[SAMPLE_LEN];
 float right_percent[SAMPLE_LEN];
 
-// PID Buffer
-float error_buffer[SAMPLE_LEN];
-float derivative_buffer[SAMPLE_LEN];
-float raw_derivative_buffer[SAMPLE_LEN];
-float raw_integral_buffer[SAMPLE_LEN];
-float integral_buffer[SAMPLE_LEN];
+// Distance PID Buffer
+float dist_setpoint_buffer[SAMPLE_LEN];
+float dist_sensor_buffer[SAMPLE_LEN];
+float dist_output_buffer[SAMPLE_LEN];
+
+// Orientation PID Buffer
+float orient_setpoint_buffer[SAMPLE_LEN];
+float orient_sensor_buffer[SAMPLE_LEN];
+float orient_output_buffer[SAMPLE_LEN];
 //////////// Sample Data ////////////
 
 //////////// Commands ////////////
@@ -168,14 +380,16 @@ enum CommandTypes
     START_RECORD,
     STOP_ROBOT,
     SEND_LOG,
-    UPDATE_PID,
     SET_DURATION,
-    SET_SETPOINT,
     SET_MODE,
     SET_MOTOR_SCALE,
-    SET_EXTRAPOLATION,
-    SET_KALMANFILTER,
-    SET_FLIP_DURATION
+    SET_FLIP_DURATION,
+    UPDATE_DIST_PID,
+    UPDATE_ORIENT_PID,
+    SET_DIST_SETPOINT,
+    SET_ORIENT_SETPOINT,
+    SET_NAV_SETPOINTS,
+    SET_DIST_SENSOR_MODE
 };
 //////////// Commands ////////////
 
@@ -186,44 +400,31 @@ enum ControlMode
     MODE_ORIENTATION,
     MODE_RUSH,
     MODE_IDLE,
-    MODE_FLIP
+    MODE_FLIP,
+    MODE_NAVIGATION // Distance + Orientation simultaneously
 };
 
 enum FlipState
 {
     FLIP_READY,
     FLIP_STARTED,
-    FLIP_COMPLETED,
+    FLIP_RECOVER,
+    FLIP_RETURN,
     FLIP_IDLE
 };
 
 ControlMode control_mode = MODE_POSITION;
 FlipState flip_state = FLIP_READY;
-int flip_duration = 500000;  // in microseconds
-unsigned long flip_time = 0; // in microseconds
-bool extrapolation = true;
-bool kalman_filter = false;
+int flip_duration = 500000;    // in microseconds
+int recover_duration = 250000; // in microseconds
+unsigned long flip_time = 0;   // in microseconds
+
+bool active = false;
+bool sensor_updated = false;
+bool tof_updated = false;
+bool imu_updated = false;
+unsigned long last_control_time = 0; // in microseconds
 //////////// Control Mode ////////////
-
-//////////// Kalman Filter ////////////
-using namespace BLA;
-float sys_d = 0.000309f;
-float sys_m = 10.579281f;
-
-Matrix<2, 2> A = {0.0f, 1.0f, 0.0f, -sys_d / sys_m};
-Matrix<2, 1> B = {0.0f, 1.0f / sys_m};
-
-Matrix<2, 1> mu = {0.0f, 0.0f};
-Matrix<2, 2> Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
-
-Matrix<1, 2> C = {1.0f, 0.0f};
-// Process Noise
-Matrix<2, 2> Sigma_u = {97.0f * 97.0f, 0.0f, 0.0f, 97.0f * 97.0f};
-// Measurement Noise
-Matrix<1, 1> Sigma_z = {15.0f * 15.0f};
-
-Matrix<2, 2> I2 = {1.0f, 0.0f, 0.0f, 1.0f};
-//////////// Kalman Filter ////////////
 
 // =========================
 // SETUP
@@ -231,6 +432,26 @@ Matrix<2, 2> I2 = {1.0f, 0.0f, 0.0f, 1.0f};
 void setup()
 {
     Serial.begin(115200);
+
+    // Default PID gains
+    dist_pid.kp = 0.05f;
+    dist_pid.ki = 0.0f;
+    dist_pid.kd = 0.05f;
+    dist_pid.sensor_mode = PIDController::EXTRAPOLATION;
+
+    orient_pid.kp = 1.5f;
+    orient_pid.ki = 1.2f;
+    orient_pid.kd = 0.25f;
+    orient_pid.sensor_mode = PIDController::DIRECT;
+
+    // Initialize Kalman filter model for distance (drag/mass system)
+    dist_pid.initKalman(
+        0.000309f,  // sys_d (drag)
+        10.579281f, // sys_m (mass)
+        97.0f,      // process noise std
+        15.0f       // measurement noise std
+    );
+
     setupBle();
     setupICM();
     setupToF();
@@ -245,12 +466,40 @@ void loop()
 {
     handleBLE();
     updateSensors();
-    if (active && (sensor_updated || extrapolation || kalman_filter))
+
+    if (active)
     {
-        runController();
-        pid_count++;
-        sensor_updated = false;
+        bool should_run = false;
+        bool dist_uses_prediction = (dist_pid.sensor_mode == PIDController::EXTRAPOLATION ||
+                                     dist_pid.sensor_mode == PIDController::KALMAN);
+
+        switch (control_mode)
+        {
+        case MODE_POSITION:
+            should_run = tof_updated || dist_uses_prediction;
+            break;
+        case MODE_ORIENTATION:
+            should_run = imu_updated;
+            break;
+        case MODE_FLIP:
+        case MODE_NAVIGATION:
+        case MODE_RUSH:
+            should_run = tof_updated || imu_updated || dist_uses_prediction;
+            break;
+        case MODE_IDLE:
+            should_run = tof_updated || imu_updated;
+            break;
+        }
+
+        if (should_run)
+        {
+            runController();
+            tof_updated = false;
+            imu_updated = false;
+            sensor_updated = false;
+        }
     }
+
     if (collecting)
         collectSamples();
     if (active && millis() - start_sample_time >= SAMPLE_DURATION)
@@ -291,20 +540,16 @@ void handleBLE()
 
 void handleCommand()
 {
-    // Set the command string from the characteristic value
     robot_cmd.set_cmd_string(rx_characteristic_string.value(),
                              rx_characteristic_string.valueLength());
 
     bool success;
     int cmd_type = -1;
 
-    // Get robot command type (an integer)
     success = robot_cmd.get_command_type(cmd_type);
-    // Check if the last tokenization was successful and return if failed
     if (!success)
         return;
 
-    // Handle the command type accordingly
     switch (cmd_type)
     {
     case PING:
@@ -322,34 +567,38 @@ void handleCommand()
         cleanLog();
         cleanState();
 
+        // Initialize distance sensors for modes that use ToF
         if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
-            control_mode == MODE_RUSH || control_mode == MODE_IDLE)
+            control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
+            control_mode == MODE_NAVIGATION)
         {
             distanceSensor2.stopRanging();
             // distanceSensor1.startRanging();
             distanceSensor2.startRanging();
-            Serial.println("Waiting for second ToF reading...");
+            Serial.println("Waiting for ToF reading...");
             while (!distanceSensor2.checkForDataReady())
             {
                 delay(1);
             }
             tof2_dist = distanceSensor2.getDistance();
             distanceSensor2.clearInterrupt();
+            tof2_time = micros();
+
             if (control_mode == MODE_FLIP)
             {
-                flip_state = (tof2_dist < setpoint) ? FLIP_IDLE : FLIP_READY;
+                flip_state = (tof2_dist < dist_pid.setpoint) ? FLIP_IDLE : FLIP_READY;
             }
-            sensor_updated = true;
-            sensor_value = tof2_dist;
-            tof2_time = micros();
-            tof2_velocity = 0.0f;
 
-            // reset Kalman Filter state
-            mu(0, 0) = tof2_dist;
-            mu(1, 0) = 0.0f;
-            Sigma = {10000.0f, 0.0f, 0.0f, 10000.0f};
+            tof_updated = true;
+            sensor_updated = true;
+            dist_pid.sensor_value = tof2_dist;
+            dist_pid.feedMeasurement(tof2_dist, tof2_time);
+            dist_pid.resetKalman(tof2_dist);
         }
-        if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE)
+
+        // Initialize IMU for modes that use orientation
+        if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE ||
+            control_mode == MODE_NAVIGATION || control_mode == MODE_FLIP || control_mode == MODE_RUSH)
         {
             myICM.resetFIFO();
             while (!updateIMU())
@@ -358,8 +607,9 @@ void handleCommand()
             }
             yaw_offset = dmp_yaw;
             gyr_z_offset = gyr_z;
+            imu_updated = true;
             sensor_updated = true;
-            sensor_value = 0.0f;
+            orient_pid.sensor_value = 0.0f;
             acc_x = 0.0f;
             last_control_time = micros();
         }
@@ -394,32 +644,28 @@ void handleCommand()
             tx_estring_value.append(left_pwm[i]);
             tx_estring_value.append("|RPWM: ");
             tx_estring_value.append(right_pwm[i]);
-            // tx_estring_value.append("|LPEC: ");
-            // tx_estring_value.append(left_percent[i]);
-            // tx_estring_value.append("|RPEC: ");
-            // tx_estring_value.append(right_percent[i]);
-            tx_estring_value.append("|E: ");
-            tx_estring_value.append(error_buffer[i]);
-            tx_estring_value.append("|I: ");
-            tx_estring_value.append(integral_buffer[i]);
-            tx_estring_value.append("|RI: ");
-            tx_estring_value.append(raw_integral_buffer[i]);
-            tx_estring_value.append("|D: ");
-            tx_estring_value.append(derivative_buffer[i]);
-            tx_estring_value.append("|RD: ");
-            tx_estring_value.append(raw_derivative_buffer[i]);
-            // tx_estring_value.append("|AX: ");
-            // tx_estring_value.append(acc_x_buffer[i]);
+            tx_estring_value.append("|AX: ");
+            tx_estring_value.append(acc_x_buffer[i]);
             tx_estring_value.append("|GZ: ");
             tx_estring_value.append(gyr_z_buffer[i]);
-            // tx_estring_value.append("|YW: ");
-            // tx_estring_value.append(yaw_buffer[i]);
-            // tx_estring_value.append("|T1: ");
-            // tx_estring_value.append(tof_1_buffer[i]);
-            // tx_estring_value.append("|T2: ");
-            // tx_estring_value.append(tof_2_buffer[i]);
-            tx_estring_value.append("|S: ");
-            tx_estring_value.append(sensor_buffer[i]);
+            // tx_estring_value.append("|PI: ");
+            // tx_estring_value.append(pitch_buffer[i]);
+            tx_estring_value.append("|RO: ");
+            tx_estring_value.append(roll_buffer[i]);
+            tx_estring_value.append("|T2: ");
+            tx_estring_value.append(tof_2_buffer[i]);
+            // tx_estring_value.append("|DS: ");
+            // tx_estring_value.append(dist_setpoint_buffer[i]);
+            tx_estring_value.append("|DV: ");
+            tx_estring_value.append(dist_sensor_buffer[i]);
+            // tx_estring_value.append("|DO: ");
+            // tx_estring_value.append(dist_output_buffer[i]);
+            // tx_estring_value.append("|OS: ");
+            // tx_estring_value.append(orient_setpoint_buffer[i]);
+            tx_estring_value.append("|OV: ");
+            tx_estring_value.append(orient_sensor_buffer[i]);
+            tx_estring_value.append("|OO: ");
+            tx_estring_value.append(orient_output_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
             delay(3);
         }
@@ -430,16 +676,17 @@ void handleCommand()
         tx_estring_value.append(tof_count);
         tx_estring_value.append("| IMU Count: ");
         tx_estring_value.append(imu_count);
-        tx_estring_value.append("| PID Count: ");
-        tx_estring_value.append(pid_count);
+        tx_estring_value.append("| Dist PID Count: ");
+        tx_estring_value.append(dist_pid.count);
+        tx_estring_value.append("| Orient PID Count: ");
+        tx_estring_value.append(orient_pid.count);
         tx_characteristic_string.writeValue(tx_estring_value.c_str());
         break;
     }
 
-    case UPDATE_PID:
+    case UPDATE_DIST_PID:
     {
         float new_kp, new_ki, new_kd;
-        // Extract the next value from the command string as a float
         success = robot_cmd.get_next_value(new_kp);
         if (!success)
             return;
@@ -450,9 +697,40 @@ void handleCommand()
         if (!success)
             return;
 
-        kp = new_kp;
-        ki = new_ki;
-        kd = new_kd;
+        dist_pid.kp = new_kp;
+        dist_pid.ki = new_ki;
+        dist_pid.kd = new_kd;
+        Serial.print("Set Dist PID: ");
+        Serial.print(new_kp);
+        Serial.print(", ");
+        Serial.print(new_ki);
+        Serial.print(", ");
+        Serial.println(new_kd);
+        break;
+    }
+
+    case UPDATE_ORIENT_PID:
+    {
+        float new_kp, new_ki, new_kd;
+        success = robot_cmd.get_next_value(new_kp);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(new_ki);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(new_kd);
+        if (!success)
+            return;
+
+        orient_pid.kp = new_kp;
+        orient_pid.ki = new_ki;
+        orient_pid.kd = new_kd;
+        Serial.print("Set Orient PID: ");
+        Serial.print(new_kp);
+        Serial.print(", ");
+        Serial.print(new_ki);
+        Serial.print(", ");
+        Serial.println(new_kd);
         break;
     }
 
@@ -468,18 +746,45 @@ void handleCommand()
         break;
     }
 
-    case SET_SETPOINT:
+    case SET_DIST_SETPOINT:
     {
         float new_setpoint;
         success = robot_cmd.get_next_value(new_setpoint);
         if (!success)
             return;
-        if (control_mode == MODE_ORIENTATION)
-            setpoint = wrapAngle180(new_setpoint);
-        else
-            setpoint = new_setpoint;
-        Serial.println("Set Setpoint to: ");
-        Serial.print(setpoint);
+        dist_pid.setpoint = new_setpoint;
+        Serial.print("Set Dist Setpoint to: ");
+        Serial.println(dist_pid.setpoint);
+        break;
+    }
+
+    case SET_ORIENT_SETPOINT:
+    {
+        float new_setpoint;
+        success = robot_cmd.get_next_value(new_setpoint);
+        if (!success)
+            return;
+        orient_pid.setpoint = PIDController::wrapAngle180(new_setpoint);
+        Serial.print("Set Orient Setpoint to: ");
+        Serial.println(orient_pid.setpoint);
+        break;
+    }
+
+    case SET_NAV_SETPOINTS:
+    {
+        float new_dist_sp, new_orient_sp;
+        success = robot_cmd.get_next_value(new_dist_sp);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(new_orient_sp);
+        if (!success)
+            return;
+        dist_pid.setpoint = new_dist_sp;
+        orient_pid.setpoint = PIDController::wrapAngle180(new_orient_sp);
+        Serial.print("Set Nav Setpoints: dist=");
+        Serial.print(dist_pid.setpoint);
+        Serial.print(", orient=");
+        Serial.println(orient_pid.setpoint);
         break;
     }
 
@@ -506,7 +811,9 @@ void handleCommand()
         case MODE_IDLE:
             control_mode = MODE_IDLE;
             break;
-
+        case MODE_NAVIGATION:
+            control_mode = MODE_NAVIGATION;
+            break;
         default:
             Serial.print("Invalid Control Mode: ");
             Serial.println(new_mode);
@@ -526,39 +833,45 @@ void handleCommand()
         break;
     }
 
-    case SET_EXTRAPOLATION:
+    // 0 = DIRECT, 1 = EXTRAPOLATION, 2 = KALMAN
+    case SET_DIST_SENSOR_MODE:
     {
-        int extrapolation_int;
-        success = robot_cmd.get_next_value(extrapolation_int);
+        int mode_int;
+        success = robot_cmd.get_next_value(mode_int);
         if (!success)
             return;
-        extrapolation = (extrapolation_int != 0);
-        kalman_filter = (extrapolation_int == 0);
-        Serial.print("Set Extrapolation to: ");
-        Serial.println(extrapolation ? "True" : "False");
-        break;
-    }
-
-    case SET_KALMANFILTER:
-    {
-        int kalman_filter_int;
-        success = robot_cmd.get_next_value(kalman_filter_int);
-        if (!success)
-            return;
-        kalman_filter = (kalman_filter_int != 0);
-        extrapolation = (kalman_filter_int == 0);
-        Serial.print("Set Kalman Filter to: ");
-        Serial.println(kalman_filter ? "True" : "False");
+        switch (mode_int)
+        {
+        case 0:
+            dist_pid.sensor_mode = PIDController::DIRECT;
+            Serial.println("Dist sensor mode: DIRECT");
+            break;
+        case 1:
+            dist_pid.sensor_mode = PIDController::EXTRAPOLATION;
+            Serial.println("Dist sensor mode: EXTRAPOLATION");
+            break;
+        case 2:
+            dist_pid.sensor_mode = PIDController::KALMAN;
+            Serial.println("Dist sensor mode: KALMAN");
+            break;
+        default:
+            Serial.print("Invalid sensor mode: ");
+            Serial.println(mode_int);
+        }
         break;
     }
 
     case SET_FLIP_DURATION:
     {
-        int new_flip_duration;
+        int new_flip_duration, new_recover_duration;
         success = robot_cmd.get_next_value(new_flip_duration);
         if (!success)
             return;
+        success = robot_cmd.get_next_value(new_recover_duration);
+        if (!success)
+            return;
         flip_duration = new_flip_duration;
+        recover_duration = new_recover_duration;
         Serial.print("Set Flip Duration to: ");
         Serial.print(flip_duration);
         Serial.println(" microseconds");
@@ -577,6 +890,13 @@ void handleCommand()
 // =========================
 // Controller
 // =========================
+
+// Get orientation sensor value (yaw relative to offset)
+float getOrientationSensorValue()
+{
+    return PIDController::wrapAngle180(dmp_yaw - yaw_offset);
+}
+
 void runController()
 {
     unsigned long current_control_time = micros();
@@ -589,201 +909,180 @@ void runController()
     {
     case MODE_POSITION:
     {
-        float new_sensor = getSensorValue(dt);
-        float new_error = new_sensor - setpoint;
-
-        if (kalman_filter)
-        {
-            derivative_value = mu(1, 0);
-        }
-        else
-        {
-            // Avoid derivative Kick
-            raw_derivative_value = (new_error - error_value) / dt;
-            // Derivative LPF
-            derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
-        }
-
-        // Anti-Windup
-        raw_integral_value = integral_value + new_error * dt;
-        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
-
-        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
-        bool saturated_high = unsat_output > output_limit;
-        bool saturated_low = unsat_output < -output_limit;
-        if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
-        {
-            integral_value = new_integral;
-        }
-        output_value = kp * new_error + ki * integral_value + kd * derivative_value;
-        error_value = new_error;
-        sensor_value = new_sensor;
+        float estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
+        dist_pid.compute(estimate, dt, false, use_kf_d);
+        applyLinearOutput(dist_pid.output_value);
         break;
     }
 
     case MODE_ORIENTATION:
     {
-        float new_sensor = wrapAngle180(getSensorValue(dt) - yaw_offset);
-        float new_error = wrapAngle180(new_sensor - setpoint);
+        float new_sensor = getOrientationSensorValue();
+        orient_pid.compute(new_sensor, dt, true);
+        // Negate: positive error -> turn one way
+        applyAngularOutput(-orient_pid.output_value);
+        break;
+    }
 
-        // Avoid derivative Kick
-        float delta_angle = wrapAngle180(new_sensor - sensor_value);
-        raw_derivative_value = delta_angle / dt;
-        // Derivative LPF
-        derivative_value = derivative_filter_alpha * raw_derivative_value + (1.0f - derivative_filter_alpha) * derivative_value;
-        // Anti-Windup
-        raw_integral_value = integral_value + new_error * dt;
-        float new_integral = constrain(raw_integral_value, -integral_limit, integral_limit);
-        float unsat_output = kp * new_error + ki * new_integral + kd * derivative_value;
-        bool saturated_high = unsat_output > output_limit;
-        bool saturated_low = unsat_output < -output_limit;
-        if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || (saturated_low && new_error > 0))
-        {
-            integral_value = new_integral;
-        }
-        output_value = -(kp * new_error + ki * integral_value + kd * derivative_value);
-        error_value = new_error;
-        sensor_value = new_sensor;
+    case MODE_NAVIGATION:
+    {
+        // Simultaneous distance + orientation control
+        float dist_estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        float orient_sensor = getOrientationSensorValue();
+
+        bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
+        float linear = dist_pid.compute(dist_estimate, dt, false, use_kf_d);
+        float angular = orient_pid.compute(orient_sensor, dt, true);
+
+        // Motor mixing: linear drives both, angular steers
+        float left_output = constrain((linear - angular) * MOTOR_SCALE, -100.0f, 100.0f);
+        float right_output = constrain((linear + angular) * MOTOR_SCALE, -100.0f, 100.0f);
+
+        left_motor_pct = left_output;
+        right_motor_pct = right_output;
+        setMotors(left_output, right_output);
         break;
     }
 
     case MODE_RUSH:
     {
-        float new_sensor = getSensorValue(dt);
-        sensor_value = new_sensor;
-        float new_error = new_sensor - setpoint;
-        // if (new_error > 0)
-        output_value = 100.0f;
-        // else
-        //     output_value = 0.0f;
-
+        float estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        dist_pid.sensor_value = estimate;
+        dist_pid.output_value = 100.0f;
+        float orient_sensor = getOrientationSensorValue();
+        float angular = orient_pid.compute(orient_sensor, dt, true);
+        float left_raw = 100.0f - angular;
+        float right_raw = 100.0f + angular;
+        float max_raw = max(left_raw, right_raw);
+        if (max_raw > 100.0f)
+        {
+            float overshoot = max_raw - 100.0f;
+            left_raw -= overshoot;
+            right_raw -= overshoot;
+        }
+        left_motor_pct = constrain(left_raw * MOTOR_SCALE, -100.0f, 100.0f);
+        right_motor_pct = constrain(right_raw * MOTOR_SCALE, -100.0f, 100.0f);
+        setMotors(left_motor_pct, right_motor_pct);
         break;
     }
 
     case MODE_IDLE:
     {
-        output_value = 0.0f;
+        dist_pid.output_value = 0.0f;
+        orient_pid.output_value = 0.0f;
+        applyLinearOutput(0.0f);
         break;
     }
 
     case MODE_FLIP:
     {
-        float new_sensor = getSensorValue(dt);
-        float new_error = setpoint - new_sensor;
+        // 1. 卡尔曼防抖保护：如果小车正在翻滚或落地缓冲，屏蔽 ToF 更新
+        bool valid_tof = tof_updated;
+        if (flip_state == FLIP_STARTED || flip_state == FLIP_RECOVER)
+        {
+            valid_tof = false;
+        }
 
-        sensor_value = new_sensor;
-        error_value = new_error;
-        raw_derivative_value = 0.0f;
-        derivative_value = 0.0f;
-        raw_integral_value = 0.0f;
-        integral_value = 0.0f;
+        // 2. 获取距离估计 (如果不 valid_tof，这里会自动执行预测步)
+        float dist_estimate = dist_pid.getEstimate(tof2_dist, valid_tof, dt);
+        dist_pid.sensor_value = dist_estimate; // 更新日志
+
+        // 3. 获取航向角误差
+        float orient_sensor = getOrientationSensorValue();
 
         if (flip_state == FLIP_READY)
         {
-            if (new_error > 0)
+            // === 直线冲刺阶段 ===
+            dist_pid.output_value = 100.0f;
+            // 使用 orient_pid 计算航向纠正量
+            float angular = orient_pid.compute(orient_sensor, dt, true);
+
+            // 基础满速，叠加航向控制
+            left_motor_pct = constrain((100.0f - angular) * MOTOR_SCALE, -100.0f, 100.0f);
+            right_motor_pct = constrain((100.0f + angular) * MOTOR_SCALE, -100.0f, 100.0f);
+            setMotors(left_motor_pct, right_motor_pct);
+
+            // 触发翻转逻辑 (当距离小于 setpoint 阈值)
+            if (dist_estimate <= dist_pid.setpoint)
             {
                 flip_state = FLIP_STARTED;
                 flip_time = current_control_time;
-                output_value = -100;
-                break;
             }
         }
-        if (flip_state == FLIP_STARTED)
+        else if (flip_state == FLIP_STARTED)
         {
-            if (current_control_time - flip_time > flip_duration)
+            // === 翻转反打阶段 ===
+            dist_pid.output_value = -100.0f;
+            left_motor_pct = -100.0f * MOTOR_SCALE;
+            right_motor_pct = -100.0f * MOTOR_SCALE;
+            setMotors(left_motor_pct, right_motor_pct);
+
+            // 退出条件：俯仰角判定翻转 或 达到最长超时
+            if (abs(dmp_roll) > 50.0f || (current_control_time - flip_time > flip_duration))
             {
-                flip_state = FLIP_COMPLETED;
-                output_value = 100;
-                break;
+                flip_state = FLIP_RECOVER;
+                flip_time = current_control_time;
             }
-            output_value = -100;
         }
-        if (flip_state == FLIP_COMPLETED)
+        else if (flip_state == FLIP_RECOVER)
         {
-            output_value = 100;
+            // === 落地缓冲阶段 ===
+            dist_pid.output_value = 0.0f;
+            left_motor_pct = 0.0f;
+            right_motor_pct = 0.0f;
+            setMotors(left_motor_pct, right_motor_pct); // 刹车
+
+            // 等待 250 毫秒落地稳定
+            if (abs(dmp_roll) > 175.0f || current_control_time - flip_time > recover_duration)
+            {
+                flip_state = FLIP_RETURN;
+
+                // 重置返程的基准航向为当前物理朝向
+                yaw_offset = dmp_yaw;
+                // 清理积分器，防止冲刺时的误差干扰返程
+                orient_pid.reset();
+                float new_start_dist = (tof2_dist > 10.0f) ? tof2_dist : 3000.0f; 
+                dist_pid.resetKalman(new_start_dist);
+            }
         }
+        else if (flip_state == FLIP_RETURN)
+        {
+            dist_pid.output_value = -100.0f;
+            // === 高速返程阶段 ===
+            // 使用全新的 yaw_offset 计算航向纠正量
+            float angular = -orient_pid.compute(orient_sensor, dt, true);
+
+            // 再次满速开回去
+            left_motor_pct = constrain(-(100.0f - angular) * MOTOR_SCALE, -100.0f, 100.0f);
+            right_motor_pct = constrain(-(100.0f + angular) * MOTOR_SCALE, -100.0f, 100.0f);
+            setMotors(left_motor_pct, right_motor_pct);
+        }
+
         break;
     }
 
     default:
-    {
         break;
     }
-    }
-
-    applyOutput(output_value);
 }
 
-float getSensorValue(float dt)
+// Apply output as linear (both motors same direction)
+void applyLinearOutput(float output)
 {
-    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP || control_mode == MODE_RUSH)
-    {
-        if (extrapolation)
-        {
-            unsigned long current_time = micros();
-            float extrapolated_dist = tof2_dist + tof2_velocity * ((current_time - tof2_time) / 1.e6);
-            return extrapolated_dist;
-        }
-        else if (kalman_filter)
-        {
-            Matrix<2, 2> Ad = I2 + A * dt;
-            Matrix<2, 1> Bd = B * dt;
-            float u_t = output_value / 100.0f;
-            Matrix<1, 1> u_vec = {u_t};
-            Matrix<2, 1> mu_p = Ad * mu + Bd * u_vec;
-            Matrix<2, 2> Sigma_p = Ad * Sigma * (~Ad) + Sigma_u;
-            if (!sensor_updated)
-            {
-                mu = mu_p;
-                Sigma = Sigma_p;
-                return mu_p(0, 0);
-            }
-            Matrix<1, 1> y = {tof2_dist};
-            Matrix<1, 1> y_m = y - C * mu_p;
-            Matrix<1, 1> S = C * Sigma_p * (~C) + Sigma_z;
-            Matrix<1, 1> S_inv;
-            S_inv(0, 0) = 1.0f / S(0, 0);
-            Matrix<2, 1> K = Sigma_p * (~C) * S_inv;
-            mu = mu_p + K * y_m;
-            Sigma = (I2 - K * C) * Sigma_p;
-            return mu(0, 0);
-        }
-        return tof2_dist;
-    }
-    else if (control_mode == MODE_ORIENTATION)
-    {
-        return dmp_yaw;
-    }
-    return 0.0f;
+    float power = constrain(output * MOTOR_SCALE, -100.0f, 100.0f);
+    left_motor_pct = power;
+    right_motor_pct = power;
+    setMotors(power, power);
 }
 
-void applyOutput(float output)
+// Apply output as angular (motors opposite direction)
+void applyAngularOutput(float output)
 {
-    float power = output * MOTOR_SCALE;
-    if (power > output_limit)
-        power = output_limit;
-    if (power < -output_limit)
-        power = -output_limit;
-
-    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
-        control_mode == MODE_RUSH || control_mode == MODE_IDLE)
-    {
-        left_motor_pct = power;
-        right_motor_pct = power;
-        setMotors(power, power);
-    }
-    else if (control_mode == MODE_ORIENTATION)
-    {
-        left_motor_pct = power;
-        right_motor_pct = -power;
-        setMotors(power, -power);
-    }
-    else
-    {
-        left_motor_pct = 0;
-        right_motor_pct = 0;
-        setMotors(0, 0);
-    }
+    float power = constrain(output * MOTOR_SCALE, -100.0f, 100.0f);
+    left_motor_pct = power;
+    right_motor_pct = -power;
+    setMotors(power, -power);
 }
 
 // =========================
@@ -793,36 +1092,25 @@ void updateSensors()
 {
     if (updateIMU())
     {
-        if (control_mode == MODE_ORIENTATION)
+        imu_updated = true;
+        if (control_mode == MODE_ORIENTATION || control_mode == MODE_NAVIGATION)
             sensor_updated = true;
     }
-    // if (distanceSensor1.checkForDataReady()) {
-    //     tof1_dist = distanceSensor1.getDistance();
-    //     distanceSensor1.clearInterrupt();
-    // }
 
     if (distanceSensor2.checkForDataReady())
     {
-        if (extrapolation)
-        {
-            unsigned long current_time = micros();
-            float new_dist = distanceSensor2.getDistance();
-            float dt = (current_time - tof2_time) / 1.e6;
-            if (dt > 0)
-                tof2_velocity = (new_dist - tof2_dist) / dt;
-
-            tof2_time = current_time;
-            tof2_dist = new_dist;
-            distanceSensor2.clearInterrupt();
-        }
-        else
-        {
-            tof2_dist = distanceSensor2.getDistance();
-            distanceSensor2.clearInterrupt();
-        }
+        tof2_dist = distanceSensor2.getDistance();
+        distanceSensor2.clearInterrupt();
+        tof2_time = micros();
         tof_count++;
+        tof_updated = true;
+
+        // Feed measurement to distance controller for extrapolation tracking
+        dist_pid.feedMeasurement(tof2_dist, tof2_time);
+
         if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
-            control_mode == MODE_RUSH || control_mode == MODE_IDLE)
+            control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
+            control_mode == MODE_NAVIGATION)
             sensor_updated = true;
     }
 }
@@ -851,7 +1139,8 @@ bool updateIMU()
                 q0_sq = 0.0;
             double q0 = sqrt(q0_sq); // W
             dmp_yaw = atan2(2.0 * (q0 * q3 + q1 * q2), 1.0 - 2.0 * (q2 * q2 + q3 * q3)) * 180.0 / PI;
-
+            // dmp_pitch = asin(2.0 * (q0 * q2 - q3 * q1)) * 180.0 / PI;
+            dmp_roll = atan2(2.0 * (q0 * q1 + q2 * q3), 1.0 - 2.0 * (q1 * q1 + q2 * q2)) * 180.0 / PI;
             imu_count++;
 
             return true;
@@ -998,13 +1287,12 @@ void collectSamples()
     time_buffer[sample_count] = millis() - start_sample_time;
 
     // Sensor Buffers
-    sensor_buffer[sample_count] = sensor_value;
-    // tof_1_buffer[sample_count] = tof1_dist;
     tof_2_buffer[sample_count] = tof2_dist;
     acc_x_buffer[sample_count] = acc_x;
-    // acc_y_buffer[sample_count] = acc_y;
     gyr_z_buffer[sample_count] = gyr_z;
     yaw_buffer[sample_count] = dmp_yaw;
+    // pitch_buffer[sample_count] = dmp_pitch;
+    roll_buffer[sample_count] = dmp_roll;
 
     // Motor Buffer
     left_pwm[sample_count] = (left_motor_pct > 0 ? 1 : -1) * percentToPWM(left_motor_pct, true);
@@ -1012,12 +1300,15 @@ void collectSamples()
     left_percent[sample_count] = left_motor_pct;
     right_percent[sample_count] = right_motor_pct;
 
-    // PID Buffer
-    error_buffer[sample_count] = error_value;
-    derivative_buffer[sample_count] = derivative_value;
-    raw_derivative_buffer[sample_count] = raw_derivative_value;
-    raw_integral_buffer[sample_count] = raw_integral_value;
-    integral_buffer[sample_count] = integral_value;
+    // Distance PID Buffer
+    dist_setpoint_buffer[sample_count] = dist_pid.setpoint;
+    dist_sensor_buffer[sample_count] = dist_pid.sensor_value;
+    dist_output_buffer[sample_count] = dist_pid.output_value;
+
+    // Orientation PID Buffer
+    orient_setpoint_buffer[sample_count] = orient_pid.setpoint;
+    orient_sensor_buffer[sample_count] = orient_pid.sensor_value;
+    orient_output_buffer[sample_count] = orient_pid.output_value;
 
     sample_count++;
 }
@@ -1031,18 +1322,18 @@ void cleanLog()
         right_pwm[i] = 0.0f;
         left_percent[i] = 0.0f;
         right_percent[i] = 0.0f;
-        sensor_buffer[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
-        // acc_y_buffer[i] = 0.0f;
         gyr_z_buffer[i] = 0.0f;
         yaw_buffer[i] = 0.0f;
-        // tof_1_buffer[i] = 0.0f;
+        // pitch_buffer[i] = 0.0f;
+        roll_buffer[i] = 0.0f;
         tof_2_buffer[i] = 0.0f;
-        error_buffer[i] = 0.0f;
-        derivative_buffer[i] = 0.0f;
-        raw_derivative_buffer[i] = 0.0f;
-        integral_buffer[i] = 0.0f;
-        raw_integral_buffer[i] = 0.0f;
+        dist_setpoint_buffer[i] = 0.0f;
+        dist_sensor_buffer[i] = 0.0f;
+        dist_output_buffer[i] = 0.0f;
+        orient_setpoint_buffer[i] = 0.0f;
+        orient_sensor_buffer[i] = 0.0f;
+        orient_output_buffer[i] = 0.0f;
     }
 }
 
@@ -1060,7 +1351,6 @@ void cleanState()
     tof1_dist = 0.0f;
     tof2_dist = 0.0f;
     tof_count = 0;
-    tof2_velocity = 0.0f;
     tof2_time = 0;
 
     // Motors
@@ -1068,18 +1358,15 @@ void cleanState()
     left_motor_pct = 0.0f;
     right_motor_pct = 0.0f;
 
-    // Controller
+    // Controllers
+    dist_pid.reset();
+    orient_pid.reset();
+
     active = false;
     sensor_updated = false;
+    tof_updated = false;
+    imu_updated = false;
     last_control_time = 0;
-    sensor_value = 0.0f;
-    error_value = 0.0f;
-    integral_value = 0.0f;
-    derivative_value = 0.0f;
-    raw_derivative_value = 0.0f;
-    raw_integral_value = 0.0f;
-    output_value = 0.0f;
-    pid_count = 0;
 
     // Sample
     sample_count = 0;
@@ -1095,7 +1382,9 @@ void stopRobot()
 {
     setMotors(0, 0);
     collecting = false;
-    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP || control_mode == MODE_RUSH || control_mode == MODE_IDLE)
+    if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
+        control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
+        control_mode == MODE_NAVIGATION)
     {
         // distanceSensor1.stopRanging();
         distanceSensor2.stopRanging();
@@ -1175,7 +1464,6 @@ void setupICM()
         }
         else
         {
-            // calibrateGyroBias();
             initialized = true;
         }
     }
@@ -1248,31 +1536,6 @@ void setupMotors()
     delay(2000);
 }
 
-// void calibrateGyroBias()
-// {
-//     const int N = 500;
-//     float sum = 0;
-//     for (int i = 0; i < N; i++)
-//     {
-//         while (!myICM.dataReady())
-//         {
-//         }
-//         myICM.getAGMT();
-//         sum += myICM.gyrZ();
-//         delay(5);
-//     }
-//     gyr_bias_z = sum / N;
-// }
-
-float wrapAngle180(float angle)
-{
-    while (angle > 180.0f)
-        angle -= 360.0f;
-    while (angle < -180.0f)
-        angle += 360.0f;
-    return angle;
-}
-
 void led_blink(int times, int delay_time)
 {
     for (int i = 0; i < times; i++)
@@ -1289,7 +1552,6 @@ void write_data()
     currentMillis = millis();
     if (currentMillis - previousMillis > interval)
     {
-
         tx_float_value = tx_float_value + 0.5;
         tx_characteristic_float.writeValue(tx_float_value);
 
