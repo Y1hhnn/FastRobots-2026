@@ -161,7 +161,7 @@ For the flip task, I abandoned closed-loop distance control near the wall and in
 ## Kalman Filter Update
 To improve distance estimation at high speed, I kept the Kalman filter running in an asynchronous update mode. When a new ToF measurement was available, the controller executed both the prediction and update steps. When no new sensor reading was available, it executed only the prediction step, propagating the state estimate forward using the dynamics model and motor input. 
 
-Because the control loop frequency changed significantly in this mode, I updated the discrete-time model accordingly. The control loop now runs at about 100 iterations in 5 seconds, so I set dt = 0.05 s and recomputed the discrete system matrices using
+Because the control loop frequency changed significantly in this mode, I updated the discrete-time model accordingly. The control loop now runs at about 500 iterations in 5 seconds, so I set dt = 0.01s and recomputed the discrete system matrices using
 
 ```cpp
 Ad = np.eye(2) + dt * A
