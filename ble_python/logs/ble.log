@@ -610,3 +610,8 @@
 2026-04-08 05:45:13,378 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
 2026-04-08 05:45:14,287 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
 2026-04-08 05:51:06,546 | MainThread   | [INFO    ] | _connect            |: Already connected to a BLE device
+2026-04-08 07:12:53,608 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-08 07:12:53,609 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-08 07:13:03,655 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-08 07:13:03,656 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-08 07:13:04,654 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49

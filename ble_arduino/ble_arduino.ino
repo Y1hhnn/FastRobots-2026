@@ -409,8 +409,7 @@ enum FlipState
     FLIP_READY,
     FLIP_STARTED,
     FLIP_RECOVER,
-    FLIP_RETURN,
-    FLIP_IDLE
+    FLIP_RETURN
 };
 
 ControlMode control_mode = MODE_POSITION;
@@ -977,33 +976,24 @@ void runController()
 
     case MODE_FLIP:
     {
-        // 1. 卡尔曼防抖保护：如果小车正在翻滚或落地缓冲，屏蔽 ToF 更新
         bool valid_tof = tof_updated;
         if (flip_state == FLIP_STARTED || flip_state == FLIP_RECOVER)
-        {
             valid_tof = false;
-        }
 
-        // 2. 获取距离估计 (如果不 valid_tof，这里会自动执行预测步)
         float dist_estimate = dist_pid.getEstimate(tof2_dist, valid_tof, dt);
-        dist_pid.sensor_value = dist_estimate; // 更新日志
+        dist_pid.sensor_value = dist_estimate;
 
-        // 3. 获取航向角误差
         float orient_sensor = getOrientationSensorValue();
 
         if (flip_state == FLIP_READY)
         {
-            // === 直线冲刺阶段 ===
             dist_pid.output_value = 100.0f;
-            // 使用 orient_pid 计算航向纠正量
             float angular = orient_pid.compute(orient_sensor, dt, true);
 
-            // 基础满速，叠加航向控制
             left_motor_pct = constrain((100.0f - angular) * MOTOR_SCALE, -100.0f, 100.0f);
             right_motor_pct = constrain((100.0f + angular) * MOTOR_SCALE, -100.0f, 100.0f);
             setMotors(left_motor_pct, right_motor_pct);
 
-            // 触发翻转逻辑 (当距离小于 setpoint 阈值)
             if (dist_estimate <= dist_pid.setpoint)
             {
                 flip_state = FLIP_STARTED;
@@ -1012,13 +1002,10 @@ void runController()
         }
         else if (flip_state == FLIP_STARTED)
         {
-            // === 翻转反打阶段 ===
             dist_pid.output_value = -100.0f;
             left_motor_pct = -100.0f * MOTOR_SCALE;
             right_motor_pct = -100.0f * MOTOR_SCALE;
             setMotors(left_motor_pct, right_motor_pct);
-
-            // 退出条件：俯仰角判定翻转 或 达到最长超时
             if (abs(dmp_roll) > 50.0f || (current_control_time - flip_time > flip_duration))
             {
                 flip_state = FLIP_RECOVER;
@@ -1027,33 +1014,25 @@ void runController()
         }
         else if (flip_state == FLIP_RECOVER)
         {
-            // === 落地缓冲阶段 ===
+
             dist_pid.output_value = 0.0f;
             left_motor_pct = 0.0f;
             right_motor_pct = 0.0f;
-            setMotors(left_motor_pct, right_motor_pct); // 刹车
+            setMotors(left_motor_pct, right_motor_pct);
 
-            // 等待 250 毫秒落地稳定
             if (abs(dmp_roll) > 175.0f || current_control_time - flip_time > recover_duration)
             {
                 flip_state = FLIP_RETURN;
-
-                // 重置返程的基准航向为当前物理朝向
                 yaw_offset = dmp_yaw;
-                // 清理积分器，防止冲刺时的误差干扰返程
                 orient_pid.reset();
-                float new_start_dist = (tof2_dist > 10.0f) ? tof2_dist : 3000.0f; 
+                float new_start_dist = (tof2_dist > 10.0f) ? tof2_dist : 3000.0f;
                 dist_pid.resetKalman(new_start_dist);
             }
         }
         else if (flip_state == FLIP_RETURN)
         {
             dist_pid.output_value = -100.0f;
-            // === 高速返程阶段 ===
-            // 使用全新的 yaw_offset 计算航向纠正量
             float angular = -orient_pid.compute(orient_sensor, dt, true);
-
-            // 再次满速开回去
             left_motor_pct = constrain(-(100.0f - angular) * MOTOR_SCALE, -100.0f, 100.0f);
             right_motor_pct = constrain(-(100.0f + angular) * MOTOR_SCALE, -100.0f, 100.0f);
             setMotors(left_motor_pct, right_motor_pct);
