@@ -85,8 +85,12 @@ float acc_x, acc_y;
 float gyr_z, dmp_yaw;
 // float dmp_pitch = 0.0f;
 float dmp_roll = 0.0f;
+
 float gyr_z_offset = 0.0f;
 float yaw_offset = 0.0f;
+float prev_raw_yaw = 0.0f;
+float continuous_yaw = 0.0f;
+float continuous_yaw_offset = 0.0f;
 int imu_count = 0;
 
 // TOF
@@ -99,8 +103,45 @@ float left_motor_pct = 0.0f;
 float right_motor_pct = 0.0f;
 //////////// Global Variables ////////////
 
-// =================================================================
-// PID Controller
+//////////// Sample Data ////////////
+const int SAMPLE_LEN = 3000;
+int SAMPLE_INTERVAL = 1000;          // in microseconds
+unsigned long last_sample_time = 0;  // in microseconds
+int SAMPLE_DURATION = 5000;          // in milliseconds
+unsigned long start_sample_time = 0; // in milliseconds
+int sample_count = 0;
+bool collecting = false;
+
+// System Buffers
+unsigned long time_buffer[SAMPLE_LEN];
+
+// Sensor Buffers
+float tof_2_buffer[SAMPLE_LEN];
+float acc_x_buffer[SAMPLE_LEN];
+float acc_y_buffer[SAMPLE_LEN];
+float gyr_z_buffer[SAMPLE_LEN];
+float yaw_buffer[SAMPLE_LEN];
+// float pitch_buffer[SAMPLE_LEN];
+float roll_buffer[SAMPLE_LEN];
+
+// Motor Buffer
+float left_pwm[SAMPLE_LEN];
+float right_pwm[SAMPLE_LEN];
+float left_percent[SAMPLE_LEN];
+float right_percent[SAMPLE_LEN];
+
+// Distance PID Buffer
+float dist_setpoint_buffer[SAMPLE_LEN];
+float dist_sensor_buffer[SAMPLE_LEN];
+float dist_output_buffer[SAMPLE_LEN];
+
+// Orientation PID Buffer
+float orient_setpoint_buffer[SAMPLE_LEN];
+float orient_sensor_buffer[SAMPLE_LEN];
+float orient_output_buffer[SAMPLE_LEN];
+//////////// Sample Data ////////////
+
+////////////////////////// PID Controller /////////////////////////
 // =================================================================
 // Self-contained PID with optional Kalman filter and extrapolation
 // for distance estimation. Orientation mode uses direct sensor input.
@@ -335,43 +376,7 @@ struct PIDController
 PIDController dist_pid;
 // Orientation PID — controls turning via IMU yaw
 PIDController orient_pid;
-
-//////////// Sample Data ////////////
-const int SAMPLE_LEN = 1500;
-int SAMPLE_INTERVAL = 1000;          // in microseconds
-unsigned long last_sample_time = 0;  // in microseconds
-int SAMPLE_DURATION = 5000;          // in milliseconds
-unsigned long start_sample_time = 0; // in milliseconds
-int sample_count = 0;
-bool collecting = false;
-
-// System Buffers
-unsigned long time_buffer[SAMPLE_LEN];
-
-// Sensor Buffers
-float tof_2_buffer[SAMPLE_LEN];
-float acc_x_buffer[SAMPLE_LEN];
-float gyr_z_buffer[SAMPLE_LEN];
-float yaw_buffer[SAMPLE_LEN];
-// float pitch_buffer[SAMPLE_LEN];
-float roll_buffer[SAMPLE_LEN];
-
-// Motor Buffer
-float left_pwm[SAMPLE_LEN];
-float right_pwm[SAMPLE_LEN];
-float left_percent[SAMPLE_LEN];
-float right_percent[SAMPLE_LEN];
-
-// Distance PID Buffer
-float dist_setpoint_buffer[SAMPLE_LEN];
-float dist_sensor_buffer[SAMPLE_LEN];
-float dist_output_buffer[SAMPLE_LEN];
-
-// Orientation PID Buffer
-float orient_setpoint_buffer[SAMPLE_LEN];
-float orient_sensor_buffer[SAMPLE_LEN];
-float orient_output_buffer[SAMPLE_LEN];
-//////////// Sample Data ////////////
+////////////////////////// PID Controller /////////////////////////
 
 //////////// Commands ////////////
 enum CommandTypes
@@ -383,13 +388,14 @@ enum CommandTypes
     SET_DURATION,
     SET_MODE,
     SET_MOTOR_SCALE,
-    SET_FLIP_DURATION,
     UPDATE_DIST_PID,
     UPDATE_ORIENT_PID,
     SET_DIST_SETPOINT,
     SET_ORIENT_SETPOINT,
     SET_NAV_SETPOINTS,
-    SET_DIST_SENSOR_MODE
+    SET_DIST_SENSOR_MODE,
+    SET_SAMPLE_RATE,
+    SET_MAP_DEGREES
 };
 //////////// Commands ////////////
 
@@ -401,6 +407,7 @@ enum ControlMode
     MODE_RUSH,
     MODE_IDLE,
     MODE_FLIP,
+    MODE_MAPPING,
     MODE_NAVIGATION // Distance + Orientation simultaneously
 };
 
@@ -409,17 +416,33 @@ enum FlipState
     FLIP_READY,
     FLIP_STARTED,
     FLIP_RECOVER,
-    FLIP_RETURN
+    FLIP_RETURN,
+    FLIP_IDLE
 };
 
-ControlMode control_mode = MODE_POSITION;
+enum MappingState
+{
+    MAP_START,
+    MAP_TURN,
+    MAP_STABILIZE,
+    MAP_MEASURE,
+    MAP_DONE
+};
+
+ControlMode control_mode = MODE_IDLE;
+
 FlipState flip_state = FLIP_READY;
-int flip_duration = 500000;    // in microseconds
-int recover_duration = 250000; // in microseconds
-unsigned long flip_time = 0;   // in microseconds
+unsigned long flip_time = 0; // in microseconds
+
+MappingState map_state = MAP_START;
+float map_increment = 20.0f;
+float map_start_angle = 0.0f;
+int map_step = 0;
+unsigned long map_stabilize_time = 0;
+float valid_map_tof = -1.0f;
+float map_total_degrees = 360.0f;
 
 bool active = false;
-bool sensor_updated = false;
 bool tof_updated = false;
 bool imu_updated = false;
 unsigned long last_control_time = 0; // in microseconds
@@ -438,7 +461,7 @@ void setup()
     dist_pid.kd = 0.05f;
     dist_pid.sensor_mode = PIDController::EXTRAPOLATION;
 
-    orient_pid.kp = 1.5f;
+    orient_pid.kp = 2.5f;
     orient_pid.ki = 1.2f;
     orient_pid.kd = 0.25f;
     orient_pid.sensor_mode = PIDController::DIRECT;
@@ -486,6 +509,7 @@ void loop()
             should_run = tof_updated || imu_updated || dist_uses_prediction;
             break;
         case MODE_IDLE:
+        case MODE_MAPPING:
             should_run = tof_updated || imu_updated;
             break;
         }
@@ -495,13 +519,12 @@ void loop()
             runController();
             tof_updated = false;
             imu_updated = false;
-            sensor_updated = false;
         }
     }
 
     if (collecting)
         collectSamples();
-    if (active && millis() - start_sample_time >= SAMPLE_DURATION)
+    if (!active || (active && millis() - start_sample_time >= SAMPLE_DURATION))
         stopRobot();
 }
 
@@ -569,7 +592,7 @@ void handleCommand()
         // Initialize distance sensors for modes that use ToF
         if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
             control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
-            control_mode == MODE_NAVIGATION)
+            control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
         {
             distanceSensor2.stopRanging();
             // distanceSensor1.startRanging();
@@ -589,7 +612,6 @@ void handleCommand()
             }
 
             tof_updated = true;
-            sensor_updated = true;
             dist_pid.sensor_value = tof2_dist;
             dist_pid.feedMeasurement(tof2_dist, tof2_time);
             dist_pid.resetKalman(tof2_dist);
@@ -597,7 +619,7 @@ void handleCommand()
 
         // Initialize IMU for modes that use orientation
         if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE ||
-            control_mode == MODE_NAVIGATION || control_mode == MODE_FLIP || control_mode == MODE_RUSH)
+            control_mode == MODE_NAVIGATION || control_mode == MODE_FLIP || control_mode == MODE_RUSH || control_mode == MODE_MAPPING)
         {
             myICM.resetFIFO();
             while (!updateIMU())
@@ -605,12 +627,21 @@ void handleCommand()
                 delay(1);
             }
             yaw_offset = dmp_yaw;
+            continuous_yaw_offset = continuous_yaw;
             gyr_z_offset = gyr_z;
             imu_updated = true;
-            sensor_updated = true;
             orient_pid.sensor_value = 0.0f;
             acc_x = 0.0f;
+            acc_y = 0.0f;
             last_control_time = micros();
+        }
+
+        if (control_mode == MODE_MAPPING)
+        {
+            dist_pid.sensor_mode = PIDController::DIRECT;
+            map_state = MAP_START;
+            map_step = 0;
+            Serial.println("Mapping Mode Initialized: Sensor mode forced to DIRECT.");
         }
 
         sample_count = 0;
@@ -645,22 +676,24 @@ void handleCommand()
             tx_estring_value.append(right_pwm[i]);
             tx_estring_value.append("|AX: ");
             tx_estring_value.append(acc_x_buffer[i]);
+            tx_estring_value.append("|AY: ");
+            tx_estring_value.append(acc_y_buffer[i]);
             tx_estring_value.append("|GZ: ");
             tx_estring_value.append(gyr_z_buffer[i]);
-            // tx_estring_value.append("|PI: ");
-            // tx_estring_value.append(pitch_buffer[i]);
-            tx_estring_value.append("|RO: ");
-            tx_estring_value.append(roll_buffer[i]);
+            tx_estring_value.append("|YW: ");
+            tx_estring_value.append(yaw_buffer[i]);
+            // tx_estring_value.append("|RO: ");
+            // tx_estring_value.append(roll_buffer[i]);
             tx_estring_value.append("|T2: ");
             tx_estring_value.append(tof_2_buffer[i]);
             // tx_estring_value.append("|DS: ");
             // tx_estring_value.append(dist_setpoint_buffer[i]);
-            tx_estring_value.append("|DV: ");
-            tx_estring_value.append(dist_sensor_buffer[i]);
+            // tx_estring_value.append("|DV: ");
+            // tx_estring_value.append(dist_sensor_buffer[i]);
             // tx_estring_value.append("|DO: ");
             // tx_estring_value.append(dist_output_buffer[i]);
-            // tx_estring_value.append("|OS: ");
-            // tx_estring_value.append(orient_setpoint_buffer[i]);
+            tx_estring_value.append("|OS: ");
+            tx_estring_value.append(orient_setpoint_buffer[i]);
             tx_estring_value.append("|OV: ");
             tx_estring_value.append(orient_sensor_buffer[i]);
             tx_estring_value.append("|OO: ");
@@ -810,6 +843,13 @@ void handleCommand()
         case MODE_IDLE:
             control_mode = MODE_IDLE;
             break;
+        case MODE_MAPPING:
+            control_mode = MODE_MAPPING;
+            map_state = MAP_START;
+            map_step = 0;
+            dist_pid.sensor_mode = PIDController::DIRECT;
+            Serial.println("Starting Orientation Mapping...");
+            break;
         case MODE_NAVIGATION:
             control_mode = MODE_NAVIGATION;
             break;
@@ -860,20 +900,30 @@ void handleCommand()
         break;
     }
 
-    case SET_FLIP_DURATION:
+    case SET_SAMPLE_RATE:
     {
-        int new_flip_duration, new_recover_duration;
-        success = robot_cmd.get_next_value(new_flip_duration);
+        int new_rate;
+        success = robot_cmd.get_next_value(new_rate);
         if (!success)
             return;
-        success = robot_cmd.get_next_value(new_recover_duration);
+        SAMPLE_INTERVAL = 1000000 / new_rate;
+        Serial.print("Set Sample Rate to: ");
+        Serial.print(new_rate);
+        Serial.print(" Hz (Interval: ");
+        Serial.print(SAMPLE_INTERVAL);
+        Serial.println(" us)");
+        break;
+    }
+
+    case SET_MAP_DEGREES:
+    {
+        float new_deg;
+        success = robot_cmd.get_next_value(new_deg);
         if (!success)
             return;
-        flip_duration = new_flip_duration;
-        recover_duration = new_recover_duration;
-        Serial.print("Set Flip Duration to: ");
-        Serial.print(flip_duration);
-        Serial.println(" microseconds");
+        map_total_degrees = new_deg;
+        Serial.print("Set Mapping Degrees to: ");
+        Serial.println(map_total_degrees);
         break;
     }
 
@@ -893,7 +943,7 @@ void handleCommand()
 // Get orientation sensor value (yaw relative to offset)
 float getOrientationSensorValue()
 {
-    return PIDController::wrapAngle180(dmp_yaw - yaw_offset);
+    return continuous_yaw - continuous_yaw_offset;
 }
 
 void runController()
@@ -1006,7 +1056,7 @@ void runController()
             left_motor_pct = -100.0f * MOTOR_SCALE;
             right_motor_pct = -100.0f * MOTOR_SCALE;
             setMotors(left_motor_pct, right_motor_pct);
-            if (abs(dmp_roll) > 50.0f || (current_control_time - flip_time > flip_duration))
+            if (abs(dmp_roll) > 50.0f)
             {
                 flip_state = FLIP_RECOVER;
                 flip_time = current_control_time;
@@ -1020,7 +1070,7 @@ void runController()
             right_motor_pct = 0.0f;
             setMotors(left_motor_pct, right_motor_pct);
 
-            if (abs(dmp_roll) > 175.0f || current_control_time - flip_time > recover_duration)
+            if (abs(dmp_roll) > 175.0f)
             {
                 flip_state = FLIP_RETURN;
                 yaw_offset = dmp_yaw;
@@ -1038,6 +1088,86 @@ void runController()
             setMotors(left_motor_pct, right_motor_pct);
         }
 
+        break;
+    }
+
+    case MODE_MAPPING:
+    {
+        float orient_sensor = getOrientationSensorValue();
+
+        switch (map_state)
+        {
+        case MAP_START:
+            map_start_angle = orient_sensor;
+            map_step = 1;
+            orient_pid.reset();
+            map_state = MAP_TURN;
+            break;
+
+        case MAP_TURN:
+        {
+            float target_angle = map_start_angle + (map_step * map_increment);
+            orient_pid.setpoint = target_angle;
+
+            float angular = orient_pid.compute(orient_sensor, dt, false);
+            applyAngularOutput(-angular);
+
+            if (abs(orient_pid.error_value) < 3.0f)
+            {
+                map_state = MAP_STABILIZE;
+                map_stabilize_time = current_control_time;
+            }
+            break;
+        }
+
+        case MAP_STABILIZE:
+        {
+            float target_angle = map_start_angle + (map_step * map_increment);
+            orient_pid.setpoint = target_angle;
+            float angular = orient_pid.compute(orient_sensor, dt, false);
+            applyAngularOutput(-angular);
+
+            if (current_control_time - map_stabilize_time > 1000000)
+            {
+                applyAngularOutput(0.0f);
+                tof_updated = false;
+                map_state = MAP_MEASURE;
+            }
+            break;
+        }
+
+        case MAP_MEASURE:
+        {
+            applyAngularOutput(0.0f);
+            if (tof_updated)
+            {
+                valid_map_tof = tof2_dist;
+                map_step++;
+
+                if (map_step * map_increment >= map_total_degrees)
+                    map_state = MAP_DONE;
+
+                else
+                    map_state = MAP_TURN;
+            }
+            break;
+        }
+
+        case MAP_DONE:
+            orient_pid.setpoint = map_start_angle + map_total_degrees;
+            float angular = orient_pid.compute(orient_sensor, dt, false);
+            applyAngularOutput(-angular);
+            if (abs(orient_pid.error_value) < 3.0f)
+            {
+                if (tof_updated)
+                {
+                    applyAngularOutput(0.0f);
+                    valid_map_tof = tof2_dist;
+                    active = false;
+                }
+            }
+            break;
+        }
         break;
     }
 
@@ -1072,8 +1202,6 @@ void updateSensors()
     if (updateIMU())
     {
         imu_updated = true;
-        if (control_mode == MODE_ORIENTATION || control_mode == MODE_NAVIGATION)
-            sensor_updated = true;
     }
 
     if (distanceSensor2.checkForDataReady())
@@ -1086,11 +1214,6 @@ void updateSensors()
 
         // Feed measurement to distance controller for extrapolation tracking
         dist_pid.feedMeasurement(tof2_dist, tof2_time);
-
-        if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
-            control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
-            control_mode == MODE_NAVIGATION)
-            sensor_updated = true;
     }
 }
 
@@ -1100,6 +1223,7 @@ bool updateIMU()
     {
         myICM.getAGMT();
         acc_x = myICM.accX();
+        acc_y = myICM.accY();
         gyr_z = myICM.gyrZ() - gyr_z_offset;
     }
 
@@ -1120,6 +1244,16 @@ bool updateIMU()
             dmp_yaw = atan2(2.0 * (q0 * q3 + q1 * q2), 1.0 - 2.0 * (q2 * q2 + q3 * q3)) * 180.0 / PI;
             // dmp_pitch = asin(2.0 * (q0 * q2 - q3 * q1)) * 180.0 / PI;
             dmp_roll = atan2(2.0 * (q0 * q1 + q2 * q3), 1.0 - 2.0 * (q1 * q1 + q2 * q2)) * 180.0 / PI;
+
+            float delta_yaw = dmp_yaw - prev_raw_yaw;
+            if (delta_yaw > 180.0f)
+                delta_yaw -= 360.0f;
+            else if (delta_yaw < -180.0f)
+                delta_yaw += 360.0f;
+
+            continuous_yaw += delta_yaw;
+            prev_raw_yaw = dmp_yaw;
+
             imu_count++;
 
             return true;
@@ -1266,8 +1400,17 @@ void collectSamples()
     time_buffer[sample_count] = millis() - start_sample_time;
 
     // Sensor Buffers
-    tof_2_buffer[sample_count] = tof2_dist;
+    if (control_mode == MODE_MAPPING)
+    {
+        tof_2_buffer[sample_count] = valid_map_tof;
+        valid_map_tof = -1.0f;
+    }
+    else
+    {
+        tof_2_buffer[sample_count] = tof2_dist;
+    }
     acc_x_buffer[sample_count] = acc_x;
+    acc_y_buffer[sample_count] = acc_y;
     gyr_z_buffer[sample_count] = gyr_z;
     yaw_buffer[sample_count] = dmp_yaw;
     // pitch_buffer[sample_count] = dmp_pitch;
@@ -1302,10 +1445,11 @@ void cleanLog()
         left_percent[i] = 0.0f;
         right_percent[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
+        acc_y_buffer[i] = 0.0f;
         gyr_z_buffer[i] = 0.0f;
         yaw_buffer[i] = 0.0f;
         // pitch_buffer[i] = 0.0f;
-        roll_buffer[i] = 0.0f;
+        // roll_buffer[i] = 0.0f;
         tof_2_buffer[i] = 0.0f;
         dist_setpoint_buffer[i] = 0.0f;
         dist_sensor_buffer[i] = 0.0f;
@@ -1342,7 +1486,6 @@ void cleanState()
     orient_pid.reset();
 
     active = false;
-    sensor_updated = false;
     tof_updated = false;
     imu_updated = false;
     last_control_time = 0;
@@ -1363,7 +1506,7 @@ void stopRobot()
     collecting = false;
     if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
         control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
-        control_mode == MODE_NAVIGATION)
+        control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
     {
         // distanceSensor1.stopRanging();
         distanceSensor2.stopRanging();
@@ -1472,20 +1615,20 @@ void setupICM()
 
 void setupToF()
 {
-    // // Turn off Sensor 2 to prevent I2C address conflicts
-    // pinMode(XSHUT_PIN, OUTPUT);
-    // digitalWrite(XSHUT_PIN, LOW);
-    // delay(10);
+    // Turn off Sensor 2 to prevent I2C address conflicts
+    pinMode(XSHUT_PIN, OUTPUT);
+    digitalWrite(XSHUT_PIN, LOW);
+    delay(10);
 
-    // // Initialize Sensor 1
-    // while (distanceSensor1.begin(WIRE_PORT) != 0)
-    // {
-    //     SERIAL_PORT.println("ToF Sensor 1 failed to begin. Retrying in 500ms...");
-    //     delay(500);
-    // }
+    // Initialize Sensor 1
+    while (distanceSensor1.begin(WIRE_PORT) != 0)
+    {
+        SERIAL_PORT.println("ToF Sensor 1 failed to begin. Retrying in 500ms...");
+        delay(500);
+    }
 
-    // // Change Sensor 1's I2C address (Default is 0x29, we change it to 0x2A)
-    // distanceSensor1.setI2CAddress(0x2A << 1);
+    // Change Sensor 1's I2C address (Default is 0x29, we change it to 0x2A)
+    distanceSensor1.setI2CAddress(0x2A << 1);
 
     // Turn on Sensor 2
     digitalWrite(XSHUT_PIN, HIGH);
