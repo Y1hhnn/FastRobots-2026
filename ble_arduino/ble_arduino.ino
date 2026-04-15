@@ -95,8 +95,8 @@ int imu_count = 0;
 
 // TOF
 float tof1_dist, tof2_dist;
-unsigned long tof2_time;
-int tof_count = 0;
+unsigned long tof1_time, tof2_time;
+int tof1_count = 0, tof2_count = 0;
 
 // Motor
 float left_motor_pct = 0.0f;
@@ -116,9 +116,10 @@ bool collecting = false;
 unsigned long time_buffer[SAMPLE_LEN];
 
 // Sensor Buffers
+float tof_1_buffer[SAMPLE_LEN];
 float tof_2_buffer[SAMPLE_LEN];
 float acc_x_buffer[SAMPLE_LEN];
-float acc_y_buffer[SAMPLE_LEN];
+// float acc_y_buffer[SAMPLE_LEN];
 float gyr_z_buffer[SAMPLE_LEN];
 float yaw_buffer[SAMPLE_LEN];
 // float pitch_buffer[SAMPLE_LEN];
@@ -139,6 +140,9 @@ float dist_output_buffer[SAMPLE_LEN];
 float orient_setpoint_buffer[SAMPLE_LEN];
 float orient_sensor_buffer[SAMPLE_LEN];
 float orient_output_buffer[SAMPLE_LEN];
+float orient_error_buffer[SAMPLE_LEN];
+float orient_integral_buffer[SAMPLE_LEN];
+float orient_derivative_buffer[SAMPLE_LEN];
 //////////// Sample Data ////////////
 
 ////////////////////////// PID Controller /////////////////////////
@@ -439,11 +443,15 @@ float map_increment = 20.0f;
 float map_start_angle = 0.0f;
 int map_step = 0;
 unsigned long map_stabilize_time = 0;
-float valid_map_tof = -1.0f;
+float valid_map_tof1 = -1.0f;
+float valid_map_tof2 = -1.0f;
 float map_total_degrees = 360.0f;
 
 bool active = false;
-bool tof_updated = false;
+bool tof1_updated = false;
+bool tof2_updated = false;
+bool wait_tof1_ready = false;
+bool wait_tof2_ready = false;
 bool imu_updated = false;
 unsigned long last_control_time = 0; // in microseconds
 //////////// Control Mode ////////////
@@ -498,7 +506,7 @@ void loop()
         switch (control_mode)
         {
         case MODE_POSITION:
-            should_run = tof_updated || dist_uses_prediction;
+            should_run = tof2_updated || dist_uses_prediction;
             break;
         case MODE_ORIENTATION:
             should_run = imu_updated;
@@ -506,25 +514,28 @@ void loop()
         case MODE_FLIP:
         case MODE_NAVIGATION:
         case MODE_RUSH:
-            should_run = tof_updated || imu_updated || dist_uses_prediction;
+            should_run = tof2_updated || imu_updated || dist_uses_prediction;
             break;
         case MODE_IDLE:
         case MODE_MAPPING:
-            should_run = tof_updated || imu_updated;
+            should_run = tof1_updated || tof2_updated || imu_updated;
             break;
         }
 
         if (should_run)
         {
             runController();
-            tof_updated = false;
+            tof1_updated = false;
+            tof2_updated = false;
             imu_updated = false;
         }
     }
 
     if (collecting)
         collectSamples();
-    if (!active || (active && millis() - start_sample_time >= SAMPLE_DURATION))
+    if (active && (millis() - start_sample_time >= SAMPLE_DURATION))
+        stopRobot();
+    if (!active)
         stopRobot();
 }
 
@@ -594,24 +605,35 @@ void handleCommand()
             control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
             control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
         {
+            distanceSensor1.stopRanging();
             distanceSensor2.stopRanging();
-            // distanceSensor1.startRanging();
+            distanceSensor1.startRanging();
             distanceSensor2.startRanging();
-            Serial.println("Waiting for ToF reading...");
+            Serial.println("Waiting for ToF readings...");
+            while (!distanceSensor1.checkForDataReady())
+            {
+                delay(1);
+            }
+            tof1_dist = distanceSensor1.getDistance();
+            distanceSensor1.clearInterrupt();
+            tof1_time = micros();
+            tof1_updated = true;
+
             while (!distanceSensor2.checkForDataReady())
             {
                 delay(1);
             }
+
             tof2_dist = distanceSensor2.getDistance();
             distanceSensor2.clearInterrupt();
             tof2_time = micros();
+            tof2_updated = true;
 
             if (control_mode == MODE_FLIP)
             {
                 flip_state = (tof2_dist < dist_pid.setpoint) ? FLIP_IDLE : FLIP_READY;
             }
 
-            tof_updated = true;
             dist_pid.sensor_value = tof2_dist;
             dist_pid.feedMeasurement(tof2_dist, tof2_time);
             dist_pid.resetKalman(tof2_dist);
@@ -676,16 +698,18 @@ void handleCommand()
             tx_estring_value.append(right_pwm[i]);
             tx_estring_value.append("|AX: ");
             tx_estring_value.append(acc_x_buffer[i]);
-            tx_estring_value.append("|AY: ");
-            tx_estring_value.append(acc_y_buffer[i]);
+            // tx_estring_value.append("|AY: ");
+            // tx_estring_value.append(acc_y_buffer[i]);
             tx_estring_value.append("|GZ: ");
             tx_estring_value.append(gyr_z_buffer[i]);
             tx_estring_value.append("|YW: ");
             tx_estring_value.append(yaw_buffer[i]);
             // tx_estring_value.append("|RO: ");
             // tx_estring_value.append(roll_buffer[i]);
-            tx_estring_value.append("|T2: ");
-            tx_estring_value.append(tof_2_buffer[i]);
+            // tx_estring_value.append("|T1: ");
+            // tx_estring_value.append(tof_1_buffer[i]);
+            // tx_estring_value.append("|T2: ");
+            // tx_estring_value.append(tof_2_buffer[i]);
             // tx_estring_value.append("|DS: ");
             // tx_estring_value.append(dist_setpoint_buffer[i]);
             // tx_estring_value.append("|DV: ");
@@ -698,14 +722,22 @@ void handleCommand()
             tx_estring_value.append(orient_sensor_buffer[i]);
             tx_estring_value.append("|OO: ");
             tx_estring_value.append(orient_output_buffer[i]);
+            tx_estring_value.append("|OE: ");
+                tx_estring_value.append(orient_error_buffer[i]);
+            tx_estring_value.append("|OI: ");
+            tx_estring_value.append(orient_integral_buffer[i]);
+            tx_estring_value.append("|OD: ");
+            tx_estring_value.append(orient_derivative_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
             delay(3);
         }
         tx_estring_value.clear();
         tx_estring_value.append("Sample Count: ");
         tx_estring_value.append(sample_count);
-        tx_estring_value.append("| ToF Count: ");
-        tx_estring_value.append(tof_count);
+        tx_estring_value.append("| ToF1 Count: ");
+        tx_estring_value.append(tof1_count);
+        tx_estring_value.append("| ToF2 Count: ");
+        tx_estring_value.append(tof2_count);
         tx_estring_value.append("| IMU Count: ");
         tx_estring_value.append(imu_count);
         tx_estring_value.append("| Dist PID Count: ");
@@ -958,7 +990,7 @@ void runController()
     {
     case MODE_POSITION:
     {
-        float estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        float estimate = dist_pid.getEstimate(tof2_dist, tof2_updated, dt);
         bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
         dist_pid.compute(estimate, dt, false, use_kf_d);
         applyLinearOutput(dist_pid.output_value);
@@ -977,7 +1009,7 @@ void runController()
     case MODE_NAVIGATION:
     {
         // Simultaneous distance + orientation control
-        float dist_estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        float dist_estimate = dist_pid.getEstimate(tof2_dist, tof2_updated, dt);
         float orient_sensor = getOrientationSensorValue();
 
         bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
@@ -996,7 +1028,7 @@ void runController()
 
     case MODE_RUSH:
     {
-        float estimate = dist_pid.getEstimate(tof2_dist, tof_updated, dt);
+        float estimate = dist_pid.getEstimate(tof2_dist, tof2_updated, dt);
         dist_pid.sensor_value = estimate;
         dist_pid.output_value = 100.0f;
         float orient_sensor = getOrientationSensorValue();
@@ -1026,7 +1058,7 @@ void runController()
 
     case MODE_FLIP:
     {
-        bool valid_tof = tof_updated;
+        bool valid_tof = tof2_updated;
         if (flip_state == FLIP_STARTED || flip_state == FLIP_RECOVER)
             valid_tof = false;
 
@@ -1127,10 +1159,11 @@ void runController()
             float angular = orient_pid.compute(orient_sensor, dt, false);
             applyAngularOutput(-angular);
 
-            if (current_control_time - map_stabilize_time > 1000000)
+            if (current_control_time - map_stabilize_time > 500000)
             {
                 applyAngularOutput(0.0f);
-                tof_updated = false;
+                wait_tof1_ready = false;
+                wait_tof2_ready = false;
                 map_state = MAP_MEASURE;
             }
             break;
@@ -1139,11 +1172,20 @@ void runController()
         case MAP_MEASURE:
         {
             applyAngularOutput(0.0f);
-            if (tof_updated)
+            if (tof1_updated)
+                wait_tof1_ready = true;
+            if (tof2_updated)
+                wait_tof2_ready = true;
+
+            if (wait_tof1_ready && wait_tof2_ready)
             {
-                valid_map_tof = tof2_dist;
+                valid_map_tof1 = tof1_dist;
+                valid_map_tof2 = tof2_dist;
                 map_step++;
 
+                wait_tof1_ready = false;
+                wait_tof2_ready = false;
+ 
                 if (map_step * map_increment >= map_total_degrees)
                     map_state = MAP_DONE;
 
@@ -1157,12 +1199,13 @@ void runController()
             orient_pid.setpoint = map_start_angle + map_total_degrees;
             float angular = orient_pid.compute(orient_sensor, dt, false);
             applyAngularOutput(-angular);
-            if (abs(orient_pid.error_value) < 3.0f)
+            if (abs(orient_pid.error_value) < 5.0f || (millis() - start_sample_time >= SAMPLE_DURATION))
             {
-                if (tof_updated)
+                if (tof1_updated && tof2_updated)
                 {
                     applyAngularOutput(0.0f);
-                    valid_map_tof = tof2_dist;
+                    valid_map_tof1 = tof1_dist;
+                    valid_map_tof2 = tof2_dist;
                     active = false;
                 }
             }
@@ -1204,13 +1247,22 @@ void updateSensors()
         imu_updated = true;
     }
 
+    if (distanceSensor1.checkForDataReady())
+    {
+        tof1_dist = distanceSensor1.getDistance();
+        distanceSensor1.clearInterrupt();
+        tof1_time = micros();
+        tof1_count++;
+        tof1_updated = true;
+    }
+
     if (distanceSensor2.checkForDataReady())
     {
         tof2_dist = distanceSensor2.getDistance();
         distanceSensor2.clearInterrupt();
         tof2_time = micros();
-        tof_count++;
-        tof_updated = true;
+        tof2_count++;
+        tof2_updated = true;
 
         // Feed measurement to distance controller for extrapolation tracking
         dist_pid.feedMeasurement(tof2_dist, tof2_time);
@@ -1402,15 +1454,18 @@ void collectSamples()
     // Sensor Buffers
     if (control_mode == MODE_MAPPING)
     {
-        tof_2_buffer[sample_count] = valid_map_tof;
-        valid_map_tof = -1.0f;
+        tof_1_buffer[sample_count] = valid_map_tof1;
+        tof_2_buffer[sample_count] = valid_map_tof2;
+        valid_map_tof1 = -1.0f;
+        valid_map_tof2 = -1.0f;
     }
     else
     {
+        tof_1_buffer[sample_count] = tof1_dist;
         tof_2_buffer[sample_count] = tof2_dist;
     }
     acc_x_buffer[sample_count] = acc_x;
-    acc_y_buffer[sample_count] = acc_y;
+    // acc_y_buffer[sample_count] = acc_y;
     gyr_z_buffer[sample_count] = gyr_z;
     yaw_buffer[sample_count] = dmp_yaw;
     // pitch_buffer[sample_count] = dmp_pitch;
@@ -1431,6 +1486,9 @@ void collectSamples()
     orient_setpoint_buffer[sample_count] = orient_pid.setpoint;
     orient_sensor_buffer[sample_count] = orient_pid.sensor_value;
     orient_output_buffer[sample_count] = orient_pid.output_value;
+    orient_error_buffer[sample_count] = orient_pid.error_value;
+    orient_integral_buffer[sample_count] = orient_pid.integral_value;
+    orient_derivative_buffer[sample_count] = orient_pid.derivative_value;
 
     sample_count++;
 }
@@ -1445,11 +1503,12 @@ void cleanLog()
         left_percent[i] = 0.0f;
         right_percent[i] = 0.0f;
         acc_x_buffer[i] = 0.0f;
-        acc_y_buffer[i] = 0.0f;
+        // acc_y_buffer[i] = 0.0f;
         gyr_z_buffer[i] = 0.0f;
         yaw_buffer[i] = 0.0f;
         // pitch_buffer[i] = 0.0f;
         // roll_buffer[i] = 0.0f;
+        tof_1_buffer[i] = 0.0f;
         tof_2_buffer[i] = 0.0f;
         dist_setpoint_buffer[i] = 0.0f;
         dist_sensor_buffer[i] = 0.0f;
@@ -1457,6 +1516,9 @@ void cleanLog()
         orient_setpoint_buffer[i] = 0.0f;
         orient_sensor_buffer[i] = 0.0f;
         orient_output_buffer[i] = 0.0f;
+        orient_error_buffer[i] = 0.0f;
+        orient_integral_buffer[i] = 0.0f;
+        orient_derivative_buffer[i] = 0.0f;
     }
 }
 
@@ -1473,7 +1535,9 @@ void cleanState()
     // TOF
     tof1_dist = 0.0f;
     tof2_dist = 0.0f;
-    tof_count = 0;
+    tof1_count = 0;
+    tof2_count = 0;
+    tof1_time = 0;
     tof2_time = 0;
 
     // Motors
@@ -1486,7 +1550,11 @@ void cleanState()
     orient_pid.reset();
 
     active = false;
-    tof_updated = false;
+    tof1_updated = false;
+    tof2_updated = false;
+    wait_tof1_ready = false;
+    wait_tof2_ready = false;
+
     imu_updated = false;
     last_control_time = 0;
 
@@ -1508,7 +1576,7 @@ void stopRobot()
         control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
         control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
     {
-        // distanceSensor1.stopRanging();
+        distanceSensor1.stopRanging();
         distanceSensor2.stopRanging();
     }
     active = false;
@@ -1641,7 +1709,7 @@ void setupToF()
         delay(500);
     }
 
-    // distanceSensor1.setDistanceModeLong();
+    distanceSensor1.setDistanceModeLong();
     distanceSensor2.setDistanceModeLong();
 
     SERIAL_PORT.println("Both ToF Sensors online!");
