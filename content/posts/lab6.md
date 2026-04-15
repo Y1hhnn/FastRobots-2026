@@ -239,7 +239,7 @@ if ((!saturated_high && !saturated_low) || (saturated_high && new_error < 0) || 
 
 # P-Control
 
-I started with P-Controller and got the best result when $K_p =1.5, K_i=0, K_d=0$. With these parameters, I tested for two times.
+I started with P-Controller and got the best result when $K_p =2.5, K_i=0, K_d=0$. With these parameters, I tested for two times.
 
 [Video Here](https://youtube.com/shorts/1Asy4QV-4r8)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
@@ -262,7 +262,7 @@ In both tests, the car was able to react to the error and move back towards the 
 
 # PD-Control
 
-To solve the overshoot, I introduced the derivative term, achieving the best tuning with $K_p =1.5, K_i=0, K_d=0.25$.
+To solve the overshoot, I introduced the derivative term, achieving the best tuning with $K_p =2.5, K_i=0, K_d=0.25$.
 
 [Video Here](https://youtube.com/shorts/j0WzvpoUmRU)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
@@ -283,7 +283,7 @@ However, the steady-state error still exists. Between 1.0 and 1.5 seconds, the D
 
 # PID-Control
 
-To elimiate the steady-state error, I added the integrate term, achieving the best tuning with $K_p =1.5, K_i=1.2, K_d=0.25$.
+To elimiate the steady-state error, I added the integrate term, achieving the best tuning with $K_p =2.5, K_i=1.2, K_d=0.25$.
 
 [Video Here](https://youtube.com/shorts/mU_Simorh5g)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
