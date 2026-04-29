@@ -118,22 +118,69 @@ class RealRobot():
 
 {{ image(path="content/posts/lab11/-3_-2.png", alt="map_-3_-2", width=1200, class="center" )}}
 
+[Video Here](https://youtube.com/shorts/WgzEv-VQFBg)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/WgzEv-VQFBg"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+<!-- 
 ## Pose at (0,0)
 
-{{ image(path="content/posts/lab11/0_0.png", alt="map_0_0", width=1200, class="center" )}}
+{{ image(path="content/posts/lab11/0_0.png", alt="map_0_0", width=1200, class="center" )}} -->
 
 ## Pose at (0,3)
 
 {{ image(path="content/posts/lab11/0_3.png", alt="map_0_3", width=1200, class="center" )}}
 
+[Video Here](https://youtube.com/shorts/PLBmKzjh3jw)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/PLBmKzjh3jw"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
 
 ## Pose at (5,3)
 
 {{ image(path="content/posts/lab11/5_3.png", alt="map_5_3", width=1200, class="center" )}}
 
+[Video Here](https://youtube.com/shorts/W2pVvWckNE0)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/W2pVvWckNE0"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+
 ## Pose at (5,-3)
 
 {{ image(path="content/posts/lab11/5_3.png", alt="map_5_-3", width=1200, class="center" )}}
+
+[Video Here](https://youtube.com/shorts/q4ZhTykllzU)
+<div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
+  <iframe
+    src="https://youtube.com/embed/q4ZhTykllzU"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+    style="width:100%;height:100%;position:absolute;left:0;top:0;overflow:hidden;">
+  </iframe>
+</div>
+
+
 
 # Analysis
 
