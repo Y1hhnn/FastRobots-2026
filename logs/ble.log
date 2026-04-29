@@ -1,0 +1,121 @@
+2026-04-25 23:58:06,169 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-25 23:58:06,170 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-25 23:58:06,170 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-25 23:58:06,170 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-25 23:58:16,313 | MainThread   | [INFO    ] | _get_ble_device     |: Found 0 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:33:03,155 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:33:03,156 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:33:13,196 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:33:13,197 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:33:14,206 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 16:38:57,638 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 16:38:57,638 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 16:38:57,638 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:38:57,638 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:39:07,718 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:39:07,718 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:39:08,605 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 16:40:29,929 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:40:29,930 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:40:39,974 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:40:39,975 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:40:40,888 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 16:43:34,051 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 16:43:34,051 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 16:43:34,051 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:43:34,051 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:43:44,124 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:43:44,125 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:43:44,999 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 16:46:39,413 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 16:46:39,413 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 16:46:39,413 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:46:39,413 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:46:49,489 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:46:49,489 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:46:50,322 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 16:56:17,369 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 16:56:17,369 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 16:56:17,369 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 16:56:17,370 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:56:27,451 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 16:56:27,451 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 16:56:28,500 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:00:37,149 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 17:00:37,149 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 17:00:37,149 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:00:37,150 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:00:47,229 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:00:47,230 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:00:48,067 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:10:44,022 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:10:44,022 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:10:54,062 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:10:54,062 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:10:55,041 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:11:09,694 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 17:11:09,694 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 17:11:09,694 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:11:09,694 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:11:19,769 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:11:19,770 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:11:20,632 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:15:41,958 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:15:41,959 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:15:51,997 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:15:51,998 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:15:52,800 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:26:17,575 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:26:17,576 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:26:27,615 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:26:27,615 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:26:28,496 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:33:22,753 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:33:22,754 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:33:32,793 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:33:32,794 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:33:33,637 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-26 17:36:28,359 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-26 17:36:28,360 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-26 17:36:28,360 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-26 17:36:28,360 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:36:38,435 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-26 17:36:38,435 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-26 17:36:39,311 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-27 16:57:20,894 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-27 16:57:20,895 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-27 16:57:20,895 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-27 16:57:20,895 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 16:57:31,013 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 16:57:31,014 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-27 16:57:32,009 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-27 16:58:19,913 | MainThread   | [INFO    ] | _connect            |: Already connected to a BLE device
+2026-04-27 17:05:42,220 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-27 17:05:42,220 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-27 17:05:42,221 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-27 17:05:42,221 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:05:52,304 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:05:52,304 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-27 17:05:53,202 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-27 17:08:14,534 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-27 17:08:14,534 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-27 17:08:14,534 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-27 17:08:14,534 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:08:24,618 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:08:24,619 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-27 17:08:25,637 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-27 17:11:37,125 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-27 17:11:37,125 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-27 17:11:37,125 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-27 17:11:37,126 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:11:47,207 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:11:47,208 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-27 17:11:48,111 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
+2026-04-27 17:27:08,996 | MainThread   | [INFO    ] | _connect            |: Already connected to a BLE device
+2026-04-27 17:27:29,019 | MainThread   | [DEBUG   ] | __init__            |: Python Info: sys.version_info(major=3, minor=13, micro=2, releaselevel='final', serial=0)
+2026-04-27 17:27:29,019 | MainThread   | [DEBUG   ] | __init__            |: System Info: macOS-15.5-arm64-arm-64bit-Mach-O
+2026-04-27 17:27:29,019 | MainThread   | [INFO    ] | _connect            |: Looking for Artemis Nano Peripheral Device: c0:42:0c:78:b8:49
+2026-04-27 17:27:29,019 | MainThread   | [INFO    ] | _get_ble_device     |: Scanning for device with address: c0:42:0c:78:b8:49, service UUID: d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:27:39,101 | MainThread   | [INFO    ] | _get_ble_device     |: Found 1 device(s) advertising service d427e7cc-c400-4597-b417-d564e20d6600
+2026-04-27 17:27:39,101 | MainThread   | [INFO    ] | _get_ble_device     |: Selecting device: 3AE32BFA-4071-EC2D-ED7A-60CCA92DBE18 (name: Artemis BLE)
+2026-04-27 17:27:40,007 | MainThread   | [INFO    ] | _connect            |: Connected to c0:42:0c:78:b8:49
