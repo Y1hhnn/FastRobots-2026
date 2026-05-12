@@ -3,6 +3,8 @@ title = "Lab 10: Grid Localization using Bayes Filter"
 date = "2026-04-22"
 +++
 
+This lab focuses on representing the robot’s belief over a discretized 3D state space (x, y, \theta). I implemented a grid localization for a sample trajectory in simulation, compute the most probable robot state after each Bayes filter iteration, compare the estimated pose with the ground truth, and evaluate when the localization algorithm performs well or poorly. 
+
 # Alogrithm
 
 ## Compute Control
