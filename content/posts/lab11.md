@@ -167,7 +167,7 @@ class RealRobot():
 
 ## Pose at (5,-3)
 
-{{ image(path="content/posts/lab11/5_3.png", alt="map_5_-3", width=1200, class="center" )}}
+{{ image(path="content/posts/lab11/5_-3.png", alt="map_5_-3", width=1200, class="center" )}}
 
 [Video Here](https://youtube.com/shorts/q4ZhTykllzU)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
