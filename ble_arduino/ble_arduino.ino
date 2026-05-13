@@ -1211,12 +1211,19 @@ void runController()
                 dist_pid.kfUpdate(tof2_dist);
             }
             dist_pid.sensor_value = dist_pid.kfPosition();
-            nav_dist_traveled_m += fabs(dist_pid.kfVelocity()) * dt / 1000.0f;
+            // Position-delta integration: kfPosition tracks ToF tightly, so
+            // (start - now) is the actual forward travel. Replaces the old
+            // fabs(kfVelocity)*dt integral, which underestimated travel
+            // because the KF velocity is biased toward zero (model input
+            // pushes v positive while ToF pulls position negative).
+            nav_dist_traveled_m =
+                fabs(nav_kf_pos_start_mm - dist_pid.kfPosition()) / 1000.0f;
 
             // Stop conditions:
-            //   primary_stop : whichever mode the user picked (time or KF dist)
-            //   backup_stop  : the OTHER mode at 3× expected, guards against
-            //                  the primary getting stuck (e.g. broken KF)
+            //   primary_stop : EITHER the picked mode fires OR the 1× time
+            //                  safety fires — whichever comes first
+            //   backup_stop  : 3× expected time, hard cap if everything else
+            //                  is broken
             //   safety_stop  : front ToF reads below the collision threshold
             float elapsed_s = (current_control_time - nav_phase_start_us) / 1.0e6f;
             float expected_s = (nav_calib_speed_mps > 1e-3f)
@@ -1226,6 +1233,12 @@ void runController()
             bool time_done = elapsed_s >= NAV_TIME_SAFETY_MULT * expected_s;
             bool safety_stop = (tof2_dist > 0.0f) && (tof2_dist < nav_safety_tof_mm);
 
+            // KF mode trusts its position-delta integrator; the 1× time
+            // gate is intentionally NOT applied here because v_calib is
+            // the steady-state speed, not the average over a from-rest
+            // segment, so it would clip the run before the robot has
+            // actually traveled the commanded distance. The 3× time
+            // backup below still protects against a stuck integrator.
             bool primary_stop = nav_use_kf_dist ? dist_done : time_done;
             const char *primary_reason = nav_use_kf_dist ? "dist" : "time";
             bool backup_stop = (elapsed_s >= 3.0f * expected_s);
