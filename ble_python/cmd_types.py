@@ -16,3 +16,7 @@ class CMD(Enum):
     SET_DIST_SENSOR_MODE=12
     SET_SAMPLE_RATE=13
     SET_MAP_DEGREES=14
+    SET_NAV_TARGET=15               # Args: heading_deg|distance_m|seg_id. START_RECORD fires.
+    SET_NAV_CALIB=16                # Args: pwm|speed_mps
+    RESET_YAW=17                    # No args — zero relative yaw at current heading
+    SET_NAV_DIST_MODE=18            # Args: 0 (time) or 1 (KF-integrated)

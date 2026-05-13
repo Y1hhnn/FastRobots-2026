@@ -140,9 +140,9 @@ float dist_output_buffer[SAMPLE_LEN];
 float orient_setpoint_buffer[SAMPLE_LEN];
 float orient_sensor_buffer[SAMPLE_LEN];
 float orient_output_buffer[SAMPLE_LEN];
-float orient_error_buffer[SAMPLE_LEN];
-float orient_integral_buffer[SAMPLE_LEN];
-float orient_derivative_buffer[SAMPLE_LEN];
+// float orient_error_buffer[SAMPLE_LEN];
+// float orient_integral_buffer[SAMPLE_LEN];
+// float orient_derivative_buffer[SAMPLE_LEN];
 //////////// Sample Data ////////////
 
 ////////////////////////// PID Controller /////////////////////////
@@ -399,7 +399,11 @@ enum CommandTypes
     SET_NAV_SETPOINTS,
     SET_DIST_SENSOR_MODE,
     SET_SAMPLE_RATE,
-    SET_MAP_DEGREES
+    SET_MAP_DEGREES,
+    SET_NAV_TARGET,   // Args: heading_deg|distance_m|seg_id. START_RECORD fires it.
+    SET_NAV_CALIB,    // Args: pwm|speed_mps
+    RESET_YAW,        // No args — zeros relative yaw at current heading
+    SET_NAV_DIST_MODE // Args: 0 (time-based) or 1 (KF-integrated)
 };
 //////////// Commands ////////////
 
@@ -412,7 +416,7 @@ enum ControlMode
     MODE_IDLE,
     MODE_FLIP,
     MODE_MAPPING,
-    MODE_NAVIGATION // Distance + Orientation simultaneously
+    MODE_NAV_SEG
 };
 
 enum FlipState
@@ -433,6 +437,17 @@ enum MappingState
     MAP_DONE
 };
 
+enum NavigationState
+{
+    NAV_IDLE,      // motors off, waiting for a new segment
+    NAV_TURN,      // rotating in place to the target world-frame heading
+    NAV_STABILIZE, // holding heading briefly so the IMU settles before driving
+    NAV_GO,        // open-loop forward with orientation PID, time/ToF-bounded
+    NAV_TAIL,      // motors off but controller still active so the coast-down
+                   // is captured by collectSamples() before NAV_DONE freezes
+    NAV_DONE       // snapshot final pose, deactivate, freeze buffers
+};
+
 ControlMode control_mode = MODE_IDLE;
 
 FlipState flip_state = FLIP_READY;
@@ -446,6 +461,43 @@ unsigned long map_stabilize_time = 0;
 float valid_map_tof1 = -1.0f;
 float valid_map_tof2 = -1.0f;
 float map_total_degrees = 360.0f;
+
+// Lab 12 turn-go-turn segment executor state.
+NavigationState nav_state = NAV_IDLE;
+float nav_target_heading_deg = 0.0f;             // absolute world-frame heading (deg)
+float nav_target_dist_m = 0.0f;                  // segment length (meters)
+int nav_segment_id = 0;                          // echoed back in the done-notify
+float nav_go_pwm = 70.0f;                        // open-loop forward PWM during NAV_GO
+float nav_calib_speed_mps = 1.76f;               // calibrated forward speed at nav_go_pwm
+float nav_safety_tof_mm = 200.0f;                // front-ToF threshold for safety stop
+unsigned long nav_phase_start_us = 0;            // entered-current-state timestamp
+float nav_kf_pos_start_mm = 0.0f;                // KF position at NAV_GO entry (mm)
+float nav_dist_traveled_m = 0.0f;                // integrated distance during NAV_GO
+const unsigned long NAV_STABILIZE_US = 200000UL; // 200 ms hold after turning
+const unsigned long NAV_TAIL_US = 1000000UL;     // 1000 ms post-stop coast,
+                                                 // collectSamples() keeps logging
+const float NAV_TURN_TOL_DEG = 3.0f;             // |yaw err| to leave NAV_TURN
+const float NAV_TIME_SAFETY_MULT = 1.0f;
+const float NAV_KF_INIT_FALLBACK_MM = 5000.0f; // if no ToF target ahead
+
+// Reason flag carried from NAV_GO into NAV_DONE so the ack reflects what
+// actually stopped the segment.
+const char *nav_stop_reason = "dist";
+
+// One-shot: set true in NAV_GO when a stop fires, cleared after NAV_DONE
+// snapshots the final pose. Ensures the snapshot runs exactly once.
+bool nav_ack_pending = false;
+
+// Latest readings captured at NAV_DONE entry. Python can pull these via the
+// SEND_LOG buffer (the last buffered sample) or via Serial; no BLE notify
+// is emitted from NAV_DONE itself.
+float nav_final_tof_mm = 0.0f;
+float nav_final_yaw_deg = 0.0f;
+
+// Distance-control mode for NAV_GO. false = stop on calibrated elapsed time,
+// true = stop on KF-integrated traveled distance. The non-primary check still
+// runs at 3× expected time as a hard safety backup.
+bool nav_use_kf_dist = false;
 
 bool active = false;
 bool tof1_updated = false;
@@ -512,9 +564,13 @@ void loop()
             should_run = imu_updated;
             break;
         case MODE_FLIP:
-        case MODE_NAVIGATION:
         case MODE_RUSH:
             should_run = tof2_updated || imu_updated || dist_uses_prediction;
+            break;
+        case MODE_NAV_SEG:
+            // Run on any sensor tick so the FSM can advance through
+            // NAV_TURN / NAV_STABILIZE / NAV_GO / NAV_DONE promptly.
+            should_run = tof1_updated || tof2_updated || imu_updated || dist_uses_prediction;
             break;
         case MODE_IDLE:
         case MODE_MAPPING:
@@ -603,7 +659,7 @@ void handleCommand()
         // Initialize distance sensors for modes that use ToF
         if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
             control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
-            control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
+            control_mode == MODE_MAPPING || control_mode == MODE_NAV_SEG)
         {
             distanceSensor1.stopRanging();
             distanceSensor2.stopRanging();
@@ -641,7 +697,8 @@ void handleCommand()
 
         // Initialize IMU for modes that use orientation
         if (control_mode == MODE_ORIENTATION || control_mode == MODE_IDLE ||
-            control_mode == MODE_NAVIGATION || control_mode == MODE_FLIP || control_mode == MODE_RUSH || control_mode == MODE_MAPPING)
+            control_mode == MODE_FLIP || control_mode == MODE_RUSH ||
+            control_mode == MODE_MAPPING || control_mode == MODE_NAV_SEG)
         {
             myICM.resetFIFO();
             while (!updateIMU())
@@ -666,6 +723,23 @@ void handleCommand()
             Serial.println("Mapping Mode Initialized: Sensor mode forced to DIRECT.");
         }
 
+        // Fire the turn-go-turn FSM. Targets must already be set via
+        // SET_NAV_TARGET — START_RECORD is purely a "go" trigger here.
+        if (control_mode == MODE_NAV_SEG)
+        {
+            orient_pid.reset();
+            orient_pid.setpoint = nav_target_heading_deg;
+            nav_state = NAV_TURN;
+            nav_phase_start_us = micros();
+            SAMPLE_DURATION = 15000; // 15 s hard safety cap
+            Serial.print("NAV start seg=");
+            Serial.print(nav_segment_id);
+            Serial.print(" heading=");
+            Serial.print(nav_target_heading_deg);
+            Serial.print(" dist=");
+            Serial.println(nav_target_dist_m);
+        }
+
         sample_count = 0;
 
         last_sample_time = micros();
@@ -687,6 +761,9 @@ void handleCommand()
 
     case SEND_LOG:
     {
+        // Lab 12 fields (7 parts): T, LPWM, RPWM, AX, T2, DV, YW.
+        // DV = dist_pid.sensor_value, which is loaded with dist_pid.kfPosition()
+        // during NAV_GO so the log captures the KF distance estimate.
         for (int i = 0; i < sample_count; i++)
         {
             tx_estring_value.clear();
@@ -698,36 +775,12 @@ void handleCommand()
             tx_estring_value.append(right_pwm[i]);
             tx_estring_value.append("|AX: ");
             tx_estring_value.append(acc_x_buffer[i]);
-            // tx_estring_value.append("|AY: ");
-            // tx_estring_value.append(acc_y_buffer[i]);
-            tx_estring_value.append("|GZ: ");
-            tx_estring_value.append(gyr_z_buffer[i]);
+            tx_estring_value.append("|T2: ");
+            tx_estring_value.append(tof_2_buffer[i]);
+            tx_estring_value.append("|DV: ");
+            tx_estring_value.append(dist_sensor_buffer[i]);
             tx_estring_value.append("|YW: ");
             tx_estring_value.append(yaw_buffer[i]);
-            // tx_estring_value.append("|RO: ");
-            // tx_estring_value.append(roll_buffer[i]);
-            // tx_estring_value.append("|T1: ");
-            // tx_estring_value.append(tof_1_buffer[i]);
-            // tx_estring_value.append("|T2: ");
-            // tx_estring_value.append(tof_2_buffer[i]);
-            // tx_estring_value.append("|DS: ");
-            // tx_estring_value.append(dist_setpoint_buffer[i]);
-            // tx_estring_value.append("|DV: ");
-            // tx_estring_value.append(dist_sensor_buffer[i]);
-            // tx_estring_value.append("|DO: ");
-            // tx_estring_value.append(dist_output_buffer[i]);
-            tx_estring_value.append("|OS: ");
-            tx_estring_value.append(orient_setpoint_buffer[i]);
-            tx_estring_value.append("|OV: ");
-            tx_estring_value.append(orient_sensor_buffer[i]);
-            tx_estring_value.append("|OO: ");
-            tx_estring_value.append(orient_output_buffer[i]);
-            tx_estring_value.append("|OE: ");
-                tx_estring_value.append(orient_error_buffer[i]);
-            tx_estring_value.append("|OI: ");
-            tx_estring_value.append(orient_integral_buffer[i]);
-            tx_estring_value.append("|OD: ");
-            tx_estring_value.append(orient_derivative_buffer[i]);
             tx_characteristic_string.writeValue(tx_estring_value.c_str());
             delay(3);
         }
@@ -882,8 +935,10 @@ void handleCommand()
             dist_pid.sensor_mode = PIDController::DIRECT;
             Serial.println("Starting Orientation Mapping...");
             break;
-        case MODE_NAVIGATION:
-            control_mode = MODE_NAVIGATION;
+        case MODE_NAV_SEG:
+            control_mode = MODE_NAV_SEG;
+            nav_state = NAV_IDLE;
+            setMotors(0.0f, 0.0f);
             break;
         default:
             Serial.print("Invalid Control Mode: ");
@@ -959,6 +1014,79 @@ void handleCommand()
         break;
     }
 
+    case SET_NAV_TARGET:
+    {
+        // Args: heading_deg | distance_m | seg_id
+        // Just records the target. START_RECORD is what actually fires the
+        // segment — it re-runs the ToF + IMU init path before turning on the
+        // controller, so the sensors come up cleanly between runs.
+        float heading_deg, distance_m;
+        int seg_id;
+        success = robot_cmd.get_next_value(heading_deg);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(distance_m);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(seg_id);
+        if (!success)
+            return;
+
+        nav_target_heading_deg = PIDController::wrapAngle180(heading_deg);
+        nav_target_dist_m = distance_m;
+        nav_segment_id = seg_id;
+
+        Serial.print("NAV target seg=");
+        Serial.print(seg_id);
+        Serial.print(" heading=");
+        Serial.print(nav_target_heading_deg);
+        Serial.print(" dist=");
+        Serial.println(nav_target_dist_m);
+        break;
+    }
+
+    case SET_NAV_CALIB:
+    {
+        // Args: pwm | speed_mps
+        float new_pwm, new_speed;
+        success = robot_cmd.get_next_value(new_pwm);
+        if (!success)
+            return;
+        success = robot_cmd.get_next_value(new_speed);
+        if (!success)
+            return;
+        nav_go_pwm = new_pwm;
+        nav_calib_speed_mps = new_speed;
+        Serial.print("Nav calib: pwm=");
+        Serial.print(nav_go_pwm);
+        Serial.print(" speed=");
+        Serial.println(nav_calib_speed_mps);
+        break;
+    }
+
+    case RESET_YAW:
+    {
+        // Zero the relative-yaw reference at the current heading. After this,
+        // getOrientationSensorValue() returns 0 until the robot rotates.
+        continuous_yaw_offset = continuous_yaw;
+        orient_pid.reset();
+        Serial.print("Yaw zeroed at raw=");
+        Serial.println(continuous_yaw);
+        break;
+    }
+
+    case SET_NAV_DIST_MODE:
+    {
+        int mode_int;
+        success = robot_cmd.get_next_value(mode_int);
+        if (!success)
+            return;
+        nav_use_kf_dist = (mode_int != 0);
+        Serial.print("Nav dist mode: ");
+        Serial.println(nav_use_kf_dist ? "KF-integrated" : "time-based");
+        break;
+    }
+
     default:
     {
         Serial.print("Invalid Command Type: ");
@@ -1006,23 +1134,152 @@ void runController()
         break;
     }
 
-    case MODE_NAVIGATION:
+    case MODE_NAV_SEG:
     {
-        // Simultaneous distance + orientation control
-        float dist_estimate = dist_pid.getEstimate(tof2_dist, tof2_updated, dt);
+        // Lab 12 turn-go-turn segment executor.
         float orient_sensor = getOrientationSensorValue();
 
-        bool use_kf_d = (dist_pid.sensor_mode == PIDController::KALMAN);
-        float linear = dist_pid.compute(dist_estimate, dt, false, use_kf_d);
-        float angular = orient_pid.compute(orient_sensor, dt, true);
+        switch (nav_state)
+        {
+        case NAV_IDLE:
+        {
+            setMotors(0.0f, 0.0f);
+            break;
+        }
 
-        // Motor mixing: linear drives both, angular steers
-        float left_output = constrain((linear - angular) * MOTOR_SCALE, -100.0f, 100.0f);
-        float right_output = constrain((linear + angular) * MOTOR_SCALE, -100.0f, 100.0f);
+        case NAV_TURN:
+        {
+            // Spin in place to the target heading using orient PID
+            orient_pid.setpoint = nav_target_heading_deg;
+            float angular = orient_pid.compute(orient_sensor, dt, true);
+            applyAngularOutput(-angular);
+            if (fabs(orient_pid.error_value) < NAV_TURN_TOL_DEG)
+            {
+                nav_state = NAV_STABILIZE;
+                nav_phase_start_us = current_control_time;
+            }
+            break;
+        }
 
-        left_motor_pct = left_output;
-        right_motor_pct = right_output;
-        setMotors(left_output, right_output);
+        case NAV_STABILIZE:
+        {
+            orient_pid.setpoint = nav_target_heading_deg;
+            float angular = orient_pid.compute(orient_sensor, dt, true);
+            applyAngularOutput(-angular);
+            if (current_control_time - nav_phase_start_us > NAV_STABILIZE_US)
+            {
+                setMotors(0.0f, 0.0f);
+                // Seed the Kalman filter with the current ToF reading so we
+                // can read out integrated traveled distance during NAV_GO.
+                // Fall back to a large constant if the ToF is invalid so that
+                // start − now still produces a positive traveled distance.
+                float kf_init = (tof2_dist > 10.0f && tof2_dist < 6000.0f)
+                                    ? tof2_dist
+                                    : NAV_KF_INIT_FALLBACK_MM;
+                dist_pid.sensor_mode = PIDController::KALMAN;
+                dist_pid.resetKalman(kf_init);
+                nav_kf_pos_start_mm = dist_pid.kfPosition();
+                nav_dist_traveled_m = 0.0f;
+                nav_state = NAV_GO;
+                nav_phase_start_us = current_control_time;
+            }
+            break;
+        }
+
+        case NAV_GO:
+        {
+            // Open-loop forward at the calibrated PWM, with orientation PID
+            // mixed into left/right to keep the heading constant
+            float angular = orient_pid.compute(orient_sensor, dt, true);
+            float left_raw = nav_go_pwm - angular;
+            float right_raw = nav_go_pwm + angular;
+            float max_raw = max(fabs(left_raw), fabs(right_raw));
+            if (max_raw > 100.0f)
+            {
+                float scale = 100.0f / max_raw;
+                left_raw *= scale;
+                right_raw *= scale;
+            }
+            left_motor_pct = constrain(left_raw * MOTOR_SCALE, -100.0f, 100.0f);
+            right_motor_pct = constrain(right_raw * MOTOR_SCALE, -100.0f, 100.0f);
+            setMotors(left_motor_pct, right_motor_pct);
+
+            dist_pid.output_value = nav_go_pwm;
+            dist_pid.kfPredict(dt);
+            if (tof2_updated && tof2_dist > 10.0f && tof2_dist < 6000.0f)
+            {
+                dist_pid.kfUpdate(tof2_dist);
+            }
+            dist_pid.sensor_value = dist_pid.kfPosition();
+            nav_dist_traveled_m += fabs(dist_pid.kfVelocity()) * dt / 1000.0f;
+
+            // Stop conditions:
+            //   primary_stop : whichever mode the user picked (time or KF dist)
+            //   backup_stop  : the OTHER mode at 3× expected, guards against
+            //                  the primary getting stuck (e.g. broken KF)
+            //   safety_stop  : front ToF reads below the collision threshold
+            float elapsed_s = (current_control_time - nav_phase_start_us) / 1.0e6f;
+            float expected_s = (nav_calib_speed_mps > 1e-3f)
+                                   ? nav_target_dist_m / nav_calib_speed_mps
+                                   : 0.0f;
+            bool dist_done = nav_dist_traveled_m >= nav_target_dist_m;
+            bool time_done = elapsed_s >= NAV_TIME_SAFETY_MULT * expected_s;
+            bool safety_stop = (tof2_dist > 0.0f) && (tof2_dist < nav_safety_tof_mm);
+
+            bool primary_stop = nav_use_kf_dist ? dist_done : time_done;
+            const char *primary_reason = nav_use_kf_dist ? "dist" : "time";
+            bool backup_stop = (elapsed_s >= 3.0f * expected_s);
+
+            if (primary_stop || backup_stop || safety_stop)
+            {
+                setMotors(0.0f, 0.0f);
+                left_motor_pct = 0.0f;
+                right_motor_pct = 0.0f;
+                if (safety_stop)
+                    nav_stop_reason = "tof";
+                else if (primary_stop)
+                    nav_stop_reason = primary_reason;
+                else
+                    nav_stop_reason = "backup"; // primary didn't fire in time
+
+                // Hand off to NAV_TAIL — motors stay off, but the controller
+                // keeps running so collectSamples() captures the coast-down
+                // before NAV_DONE freezes the buffers.
+                nav_ack_pending = true;
+                nav_state = NAV_TAIL;
+                nav_phase_start_us = current_control_time;
+            }
+            break;
+        }
+
+        case NAV_TAIL:
+        {
+            // Motors already off. Wait the tail window so the post-stop
+            // trajectory ends up in the SEND_LOG stream.
+            setMotors(0.0f, 0.0f);
+            if (current_control_time - nav_phase_start_us > NAV_TAIL_US)
+            {
+                nav_state = NAV_DONE;
+                nav_phase_start_us = current_control_time;
+            }
+            break;
+        }
+
+        case NAV_DONE:
+        {
+            setMotors(0.0f, 0.0f);
+            if (nav_ack_pending)
+            {
+                nav_final_tof_mm = tof2_dist;
+                nav_final_yaw_deg = getOrientationSensorValue();
+                active = false;     // halt runController
+                collecting = false; // freeze the sample buffers
+                nav_ack_pending = false;
+                digitalWrite(LED_BUILTIN, LOW);
+            }
+            break;
+        }
+        }
         break;
     }
 
@@ -1185,7 +1442,7 @@ void runController()
 
                 wait_tof1_ready = false;
                 wait_tof2_ready = false;
- 
+
                 if (map_step * map_increment >= map_total_degrees)
                     map_state = MAP_DONE;
 
@@ -1486,9 +1743,9 @@ void collectSamples()
     orient_setpoint_buffer[sample_count] = orient_pid.setpoint;
     orient_sensor_buffer[sample_count] = orient_pid.sensor_value;
     orient_output_buffer[sample_count] = orient_pid.output_value;
-    orient_error_buffer[sample_count] = orient_pid.error_value;
-    orient_integral_buffer[sample_count] = orient_pid.integral_value;
-    orient_derivative_buffer[sample_count] = orient_pid.derivative_value;
+    // orient_error_buffer[sample_count] = orient_pid.error_value;
+    // orient_integral_buffer[sample_count] = orient_pid.integral_value;
+    // orient_derivative_buffer[sample_count] = orient_pid.derivative_value;
 
     sample_count++;
 }
@@ -1516,9 +1773,9 @@ void cleanLog()
         orient_setpoint_buffer[i] = 0.0f;
         orient_sensor_buffer[i] = 0.0f;
         orient_output_buffer[i] = 0.0f;
-        orient_error_buffer[i] = 0.0f;
-        orient_integral_buffer[i] = 0.0f;
-        orient_derivative_buffer[i] = 0.0f;
+        // orient_error_buffer[i] = 0.0f;
+        // orient_integral_buffer[i] = 0.0f;
+        // orient_derivative_buffer[i] = 0.0f;
     }
 }
 
@@ -1574,14 +1831,14 @@ void stopRobot()
     collecting = false;
     if (control_mode == MODE_POSITION || control_mode == MODE_FLIP ||
         control_mode == MODE_RUSH || control_mode == MODE_IDLE ||
-        control_mode == MODE_NAVIGATION || control_mode == MODE_MAPPING)
+        control_mode == MODE_MAPPING)
     {
         distanceSensor1.stopRanging();
         distanceSensor2.stopRanging();
     }
     active = false;
     digitalWrite(LED_BUILTIN, LOW);
-    Serial.println("Stopped Robot");
+    // Serial.println("Stopped Robot");
 }
 
 void setupBle()
