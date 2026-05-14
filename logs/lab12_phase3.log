@@ -1,0 +1,49 @@
+2026-05-13 17:44:01,903 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 17:45:00,738 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 17:45:34,354 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 17:49:43,841 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 17:51:26,763 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 17:56:28,218 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:04:33,670 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 18:04:42,029 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 18:05:56,944 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:13:43,638 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 18:18:11,538 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 18:18:18,405 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:25:23,262 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:42:08,313 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:47:26,920 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 18:59:54,248 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:00:04,264 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:04:40,969 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:08:32,336 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:13:42,377 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:15:28,164 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:16:57,995 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:27:38,362 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:31:05,608 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:32:52,907 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:37:48,123 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:39:09,705 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 19:57:00,402 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 19:59:42,457 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:00:58,579 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:01:50,574 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:01:56,686 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 20:05:49,312 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:06:51,468 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:17:32,470 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:18:50,706 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 20:28:39,007 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 20:40:02,341 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 20:44:29,886 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 20:52:40,295 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 20:55:03,342 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 21:00:50,339 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 21:15:35,673 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 21:18:29,058 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 21:27:12,666 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 21:28:30,499 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 21:56:46,398 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.
+2026-05-13 22:22:14,098 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log already initialized.
+2026-05-13 22:22:54,057 | MainThread   | [INFO    ] | get_logger          |: Logger lab12_phase3.log initialized.

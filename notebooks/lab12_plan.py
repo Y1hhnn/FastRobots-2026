@@ -55,16 +55,19 @@ MAP_LAB9 = {
 # Map 2: Simulator world (from world.yaml), modified per Lab 12 plan.
 # Right wall pushed out to x=7 (more clearance for waypoints at x=5);
 # inner obstacle is a 1 ft × 1 ft box centered at (3, 0).
+# Matches FastRobots-sim-release/config/world.yaml exactly (converted from m to ft).
 MAP_SIM = {
     'outer': [
         (-5.5, -4.5), ( 6.5, -4.5), ( 6.5,  4.5), (-2.5,  4.5),
         (-2.5,  0.5), (-5.5,  0.5),
     ],
-    'obstacles': [    
-        [( 2.5, -0.5), ( 4.5, -0.5),
-        ( 4.5, -0.5), ( 4.5,  1.5),
-        ( 4.5,  1.5), ( 2.5,  1.5),
-        ( 2.5,  1.5), ( 2.5, -0.5)],
+    'obstacles': [
+        # Inner box (2 ft × 2 ft, world.yaml lines 7–10).
+        [( 2.5, -0.5), ( 4.5, -0.5), ( 4.5,  1.5), ( 2.5,  1.5)],
+        # Lower U-shape pillar jutting up from the bottom wall
+        # (1 ft × 2 ft, world.yaml lines 11–13 — bottom edge shared with the
+        #  outer bottom wall, so the closed obstacle polygon is a rectangle).
+        [(-0.5, -4.5), ( 0.5, -4.5), ( 0.5, -2.5), (-0.5, -2.5)],
     ],
 }
 

@@ -33,3 +33,5 @@
 2026-04-27 17:08:03,707 | MainThread   | [INFO    ] | get_logger          |: Logger demo_notebook.log initialized.
 2026-04-27 17:11:27,643 | MainThread   | [INFO    ] | get_logger          |: Logger demo_notebook.log initialized.
 2026-04-27 17:27:21,604 | MainThread   | [INFO    ] | get_logger          |: Logger demo_notebook.log initialized.
+2026-05-13 17:44:52,496 | MainThread   | [INFO    ] | get_logger          |: Logger demo_notebook.log initialized.
+2026-05-13 21:05:56,896 | MainThread   | [INFO    ] | get_logger          |: Logger demo_notebook.log initialized.

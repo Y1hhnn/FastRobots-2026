@@ -50,3 +50,48 @@
 2026-04-26 17:33:12,093 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
 2026-04-26 17:33:14,422 | MainThread   | [ERROR   ] | start               |: Plotter is already running
 2026-04-26 17:59:44,947 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 17:51:27,927 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 17:52:00,116 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 18:07:53,484 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 18:07:57,133 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 18:09:01,512 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 18:13:55,593 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 18:13:57,701 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 18:48:21,339 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:05:17,301 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:05:19,689 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:09:11,097 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:09:13,202 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:16:44,058 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:16:45,016 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:31:28,490 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:31:30,864 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:38:24,971 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:39:42,785 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:39:45,348 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:41:42,423 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:41:43,305 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 19:42:58,271 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 19:43:00,119 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:00:07,818 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:00:09,857 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:01:15,380 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:01:16,517 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:06:17,391 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:06:19,305 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:07:03,808 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:07:04,729 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:17:54,757 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:17:57,772 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:18:40,882 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:19:24,608 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:40:26,774 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:40:29,747 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 20:55:15,694 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 20:55:16,579 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 21:01:02,805 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 21:01:03,665 | MainThread   | [ERROR   ] | start               |: Plotter is already running
+2026-05-13 21:18:41,468 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 21:18:42,398 | MainThread   | [INFO    ] | start               |: Creating New Plotter Process
+2026-05-13 21:27:25,183 | MainThread   | [INFO    ] | GET_GUI             |: GUI is already running. Shutdown notebook to force restart the GUI.
+2026-05-13 21:27:26,052 | MainThread   | [ERROR   ] | start               |: Plotter is already running
