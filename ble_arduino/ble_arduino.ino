@@ -468,7 +468,7 @@ float nav_target_heading_deg = 0.0f;             // absolute world-frame heading
 float nav_target_dist_m = 0.0f;                  // segment length (meters)
 int nav_segment_id = 0;                          // echoed back in the done-notify
 float nav_go_pwm = 70.0f;                        // open-loop forward PWM during NAV_GO
-float nav_calib_speed_mps = 1.76f;               // calibrated forward speed at nav_go_pwm
+float nav_calib_speed_mps = 1.00f;               // calibrated forward speed at nav_go_pwm
 float nav_safety_tof_mm = 200.0f;                // front-ToF threshold for safety stop
 unsigned long nav_phase_start_us = 0;            // entered-current-state timestamp
 float nav_kf_pos_start_mm = 0.0f;                // KF position at NAV_GO entry (mm)
@@ -705,8 +705,16 @@ void handleCommand()
             {
                 delay(1);
             }
-            yaw_offset = dmp_yaw;
-            continuous_yaw_offset = continuous_yaw;
+            // Preserve the world-frame yaw across NAV_SEG segments — the
+            // mission-start RESET_YAW already aligned IMU yaw with the
+            // world heading, so re-zeroing here would make every segment
+            // a fresh-relative turn (and accumulate world-frame drift).
+            // All other modes still rezero on each START_RECORD.
+            if (control_mode != MODE_NAV_SEG)
+            {
+                yaw_offset = dmp_yaw;
+                continuous_yaw_offset = continuous_yaw;
+            }
             gyr_z_offset = gyr_z;
             imu_updated = true;
             orient_pid.sensor_value = 0.0f;
@@ -1285,6 +1293,21 @@ void runController()
             {
                 nav_final_tof_mm = tof2_dist;
                 nav_final_yaw_deg = getOrientationSensorValue();
+
+                // 4-field DONE notify (distinct from the 7-field log samples).
+                // Python parses these in the `len(parts) == 4` branch.
+                //   D: <seg> | S: <reason> | F: <final tof, mm> | Y: <final yaw, deg>
+                tx_estring_value.clear();
+                tx_estring_value.append("D: ");
+                tx_estring_value.append((int)nav_segment_id);
+                tx_estring_value.append("|S: ");
+                tx_estring_value.append(nav_stop_reason);
+                tx_estring_value.append("|F: ");
+                tx_estring_value.append(nav_final_tof_mm);
+                tx_estring_value.append("|Y: ");
+                tx_estring_value.append(nav_final_yaw_deg);
+                tx_characteristic_string.writeValue(tx_estring_value.c_str());
+
                 active = false;     // halt runController
                 collecting = false; // freeze the sample buffers
                 nav_ack_pending = false;
