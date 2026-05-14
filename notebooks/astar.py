@@ -261,7 +261,15 @@ def _direction(a: Cell, b: Cell) -> Tuple[int, int]:
 
 
 def simplify(path: Sequence[Cell]) -> List[Cell]:
-    """Drop interior cells that lie on a straight 8-connected run."""
+    """Drop interior cells that lie on a straight 8-connected run.
+
+    This is intended for raw A* output where every move is one of the 8
+    grid directions. It WILL break any-angle paths produced by
+    ``smooth_path`` (which can step in arbitrary integer dx/dy ratios),
+    because `_direction` only checks the sign of dx/dy. Use the
+    ``simplify_first=False`` knob on ``cells_to_segments`` after
+    smoothing.
+    """
     if len(path) < 3:
         return list(path)
     out = [path[0]]
@@ -275,13 +283,83 @@ def simplify(path: Sequence[Cell]) -> List[Cell]:
     return out
 
 
+def line_of_sight(
+    a: Cell,
+    b: Cell,
+    grid: np.ndarray,
+    samples_per_cell: int = 4,
+) -> bool:
+    """Return True if the straight line from cell ``a`` to cell ``b`` is
+    obstacle-free in the binary grid.
+
+    The line is sampled at sub-cell resolution (``samples_per_cell``
+    samples per cell-unit of travel) so thin diagonals don't slip past
+    corner-adjacent obstacles. Both endpoints must themselves be free.
+    """
+    ax, ay = a
+    bx, by = b
+    W, H = grid.shape
+    if not (0 <= ax < W and 0 <= ay < H and 0 <= bx < W and 0 <= by < H):
+        return False
+    if grid[ax, ay] or grid[bx, by]:
+        return False
+    dx = bx - ax
+    dy = by - ay
+    dist = math.hypot(dx, dy)
+    n_samples = max(int(math.ceil(dist * samples_per_cell)), 1)
+    for i in range(1, n_samples + 1):
+        t = i / n_samples
+        x = ax + t * dx
+        y = ay + t * dy
+        cx, cy = int(round(x)), int(round(y))
+        if not (0 <= cx < W and 0 <= cy < H):
+            return False
+        if grid[cx, cy]:
+            return False
+    return True
+
+
+def smooth_path(path: Sequence[Cell], grid: np.ndarray) -> List[Cell]:
+    """Greedy string-pulling on top of A* output.
+
+    Replaces 8-connected zig-zags with the longest straight runs whose
+    line is still obstacle-free in ``grid``. The result is an any-angle
+    path: adjacent cells may differ by arbitrary integer ``(dx, dy)``,
+    so headings are no longer constrained to multiples of 45°.
+
+    Pass the resulting path to ``cells_to_segments(..., simplify_first=False)``
+    — the 8-connected ``simplify`` will incorrectly collapse cells whose
+    8-connected dx/dy signs happen to match.
+    """
+    if len(path) <= 2:
+        return list(path)
+    out: List[Cell] = [path[0]]
+    i = 0
+    while i < len(path) - 1:
+        j = len(path) - 1
+        # Walk j back until we have line-of-sight from path[i].
+        while j > i + 1 and not line_of_sight(path[i], path[j], grid):
+            j -= 1
+        out.append(path[j])
+        i = j
+    return out
+
+
 def cells_to_segments(
     path: Sequence[Cell],
     origin: Point,
     cell_size: float,
+    simplify_first: bool = True,
 ) -> List[Segment]:
-    """Simplify the cell path and convert each run into (heading, distance)."""
-    simp = simplify(path)
+    """Convert a cell path into ``Segment``s.
+
+    By default the 8-connected ``simplify`` pass runs first (the right
+    thing for raw A* output). Pass ``simplify_first=False`` for paths
+    that have already been smoothed by ``smooth_path`` — those use
+    arbitrary integer dx/dy ratios and ``simplify`` will incorrectly
+    merge non-collinear runs.
+    """
+    simp = simplify(path) if simplify_first else list(path)
     segs: List[Segment] = []
     for a, b in zip(simp, simp[1:]):
         pa = cell_to_world(a, origin, cell_size)

@@ -55,18 +55,21 @@ robot:
     min_a: -180     # In Degrees
     max_a: 180      # In Degrees
 
-    # Discrete cell sizes
-    # It is recommended that you do not change these values, unless you truly know what you are doing
-    cell_size_x: 0.3048
-    cell_size_y: 0.3048 
+    # Discrete cell sizes — halved from the default (0.3048 m = 1 ft) to
+    # 0.1524 m = 0.5 ft for higher Bayes-filter (x, y) precision. Matches
+    # the A* CELL_SIZE = 0.5 in lab12_phase3.ipynb so the planner and the
+    # localization belief work at the same spatial resolution.
+    # Precaching cost is ~4× the 1-ft grid (24·18·18 = 7776 cells vs 1944).
+    cell_size_x: 0.1524
+    cell_size_y: 0.1524
     cell_size_a: 20
 
     # Number of cells in each dimensions(x,y,a)
     # Calculated based on the range divided by the cell size in each dimension
     # Ex: max_cells_x = (max_x-min_x)/cell_size_x
     # Must be integers
-    max_cells_x: 12  # Total number of grid cells in the x direction
-    max_cells_y: 9   # Total number of grid cells in the y direction
+    max_cells_x: 24  # Total number of grid cells in the x direction
+    max_cells_y: 18  # Total number of grid cells in the y direction
     max_cells_a: 18  # Total number of grid cells in the a direction
 
     # Number of observations during the rotation behavior

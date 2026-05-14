@@ -31,6 +31,7 @@ from astar import (
     cell_to_world,
     cells_to_segments,
     polygon_lines,
+    smooth_path,
     world_to_cell,
 )
 
@@ -94,7 +95,7 @@ WAYPOINTS = [
 ]
 
 # Grid setup
-CELL_SIZE = 1.0           # ft. 1.0 matches world.yaml cell_size_x = 0.3048 m.
+CELL_SIZE = 0.5           # ft. 1.0 matches world.yaml cell_size_x = 0.3048 m.
 INFLATE   = 0             # 0 = polygon containment only; bump for safety margin.
 FT_TO_M   = 0.3048        # robot operates in meters, but planner runs in feet.
 
@@ -131,7 +132,17 @@ def plan_full_path():
             continue
         full_path_cells.extend(cells if i == 0 else cells[1:])
 
-        segs = cells_to_segments(cells, origin, CELL_SIZE)
+        # Line-of-sight string-pulling on top of A*: the raw 8-connected
+        # output gives only 45°-multiple headings, which forces zig-zag
+        # paths through any (dx, dy) ratio that isn't 1:0 or 1:1. After
+        # smoothing the planner emits segments at arbitrary headings
+        # (e.g. atan2(1, -2) ≈ 153.4°), so one move can replace 2+ zig-
+        # zag segments. Use simplify_first=False — `simplify` only knows
+        # about 8-connected runs and would merge non-collinear smoothed
+        # cells whose dx/dy signs happen to match.
+        smoothed = smooth_path(cells, grid)
+        segs = cells_to_segments(smoothed, origin, CELL_SIZE,
+                                 simplify_first=False)
         print(f"\n=== {wa} -> {wb} ({len(segs)} segment(s)) ===")
         for k, s in enumerate(segs):
             print(
@@ -151,6 +162,14 @@ def plan_full_path():
 
 def plot(grid, origin, full_path_cells, segments):
     fig, ax = plt.subplots(figsize=(11, 8))
+
+    # Designed pathway: the raw waypoint sequence drawn as straight grey
+    # dashes at the bottom of the layer stack (zorder=0) — a visual
+    # reference of the intended high-level route before A* finds
+    # collision-free segments and smoothing replaces zig-zags.
+    wxs0, wys0 = zip(*WAYPOINTS)
+    ax.plot(wxs0, wys0, color='dimgray', linestyle='--', linewidth=1.4,
+            alpha=0.7, zorder=0, label='designed pathway')
 
     # Obstacle cells as actual squares (size = cell_size in data coordinates).
     occ_x, occ_y = np.where(grid == 1)
