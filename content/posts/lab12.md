@@ -171,6 +171,7 @@ Goal: navigate through these 9 waypoints in feet, with (-4, -3) as the start and
 
 {{ image(path="content/posts/lab12/path.png", alt="path", width=1200, class="center" )}}
 
+Each segment uses only the $(\delta_{rot1}, \delta_{trans})$ pair of the Lab 10 odometry model — `heading_deg` for $\delta_{rot1}$ (as an absolute world heading) and `distance` for $\delta_{trans}$. $\delta_{rot2}$ is dropped because the next segment's `NAV_TURN` absorbs it, collapsing every internal turn-go-turn into a single turn-go.
 
 The host runs the full mission. For each consecutive pair of waypoints it calls A\*, smooths the result, and walks the segment list one at a time — each segment becomes a `SET_NAV_TARGET` + `START_RECORD` + `await NAV_DONE` round trip over BLE.
 
@@ -191,9 +192,42 @@ async def send_segment(seg_id, heading_deg, dist_m, timeout_s=20.0, poll_s=0.05)
 
 ## A-star Wayplanning
 
-The occupancy grid is built by a point-in-polygon test on cell centers (`build_occupancy_grid`), then inflated by the robot's bounding-circle radius $\sqrt{0.18^2 + 0.10^2}/2 \approx 0.10$ m (≈ 0.338 ft) so the chassis stays clear of every wall during in-place rotation between segments. Standard 8-connected A\* with the Euclidean heuristic gives a cell path, but 8-connected output only emits 45°-multiple headings, which forces a zig-zag through any (dx, dy) ratio that isn't 1:0 or 1:1.
+The occupancy grid is built by a point-in-polygon test on cell centers (`build_occupancy_grid`), then inflated by the robot's bounding-circle radius $\sqrt{0.18^2 + 0.10^2}/2 \approx 0.10$ m (≈ 0.338 ft) so the chassis stays clear of every wall during in-place rotation between segments.
 
-So I run `smooth_path` on top: a greedy line-of-sight string-puller that replaces zig-zags with the longest straight runs whose line is still obstacle-free. The resulting segments can have arbitrary heading (e.g. $\mathrm{atan2}(1, -2) \approx 153.4°$), and one smoothed move can replace 2–3 of the raw 45° zig-zags.
+### Algorithm
+
+A\* is a best-first search that expands nodes in order of $f(n) = g(n) + h(n)$, where $g(n)$ is the actual cost from start and $h(n)$ is an admissible (never-overestimating) heuristic. For the 8-connected grid I use edge cost $1$ for cardinals and $\sqrt 2$ for diagonals, with Euclidean $h(n) = \sqrt{(n_x - g_x)^2 + (n_y - g_y)^2}$ — Euclidean is always ≤ any grid path, so admissibility holds.
+
+The search keeps a min-heap of `(f, cell)`, a `g` dict, and a `parent` dict for backtracking. Diagonal moves are blocked when either orthogonal neighbour is occupied (corner clipping), and start/goal are forced passable so endpoints inside the inflation buffer still get a plan.
+
+```python
+def astar(grid, start, goal):
+    grid = grid.copy(); grid[start] = 0; grid[goal] = 0
+    g, parent, closed = {start: 0.0}, {}, set()
+    h  = lambda c: math.hypot(c[0] - goal[0], c[1] - goal[1])
+    pq = [(h(start), start)]
+    while pq:
+        _, cur = heapq.heappop(pq)
+        if cur in closed: continue
+        if cur == goal:
+            path = [cur]
+            while cur in parent:
+                cur = parent[cur]; path.append(cur)
+            return list(reversed(path))
+        closed.add(cur)
+        for dx, dy, step in _NEIGHBORS:           # 4 cardinals + 4 diagonals
+            n = (cur[0] + dx, cur[1] + dy)
+            if not in_bounds(n) or grid[n]: continue
+            if dx and dy and (grid[cur[0]+dx, cur[1]] or grid[cur[0], cur[1]+dy]):
+                continue                          # block corner-clipping diagonals
+            ng = g[cur] + step
+            if ng < g.get(n, math.inf):
+                g[n], parent[n] = ng, cur
+                heapq.heappush(pq, (ng + h(n), n))
+    return []
+```
+
+`plan_segments` wraps this with `world_to_cell` / `cell_to_world` conversion and the line-of-sight smoothing pass described under Trial 2:
 
 ```python
 def plan_segments(start_ft, goal_ft):
