@@ -5,6 +5,9 @@ date = "2026-05-14"
 
 This final lab chains the planning, perception, and control primitives from earlier labs into an end-to-end mission through 9 waypoints. I pushed as much logic as possible offboard: the host Python runs A\* with line-of-sight smoothing and the Lab 11 Bayes update, while the Arduino executes one `(heading, distance)` turn-go-turn segment at a time. The two sides communicate over BLE through a new `MODE_NAV_SEG` state machine and a 4-field `D|S|F|Y` ack.
 
+# System Architecture
+The system is split into an **offboard planner** (host Python) and an **onboard executor** (Arduino FSM), connected by a thin BLE protocol. The host has access to the world map, the Bayes filter, and a fast A\* implementation; the Arduino has direct access to the IMU and ToF and can close a control loop at ~200 Hz. 
+
 # Segment Navigation
 
 The atomic motion primitive is a single turn-go-turn segment: rotate to a world-frame heading, then drive forward for a commanded distance. Both arguments arrive over BLE as `SET_NAV_TARGET heading_deg|distance_m|seg_id`, followed by `START_RECORD`. The Arduino computes nothing about world position — every segment is parameterised in its own (heading, length) frame, and the host owns the world model.
@@ -18,7 +21,14 @@ Four new BLE commands plus a new `MODE_NAV_SEG` value for `SET_MODE`:
 - `SET_NAV_DIST_MODE 0|1` — 0 = time-based stop, 1 = KF-integrated stop
 - `RESET_YAW` — zero the relative-yaw reference so the host can switch between local and world frames
 
-The on-board FSM `NAV_IDLE → NAV_TURN → NAV_STABILIZE → NAV_GO → NAV_TAIL → NAV_DONE` consumes one segment per `START_RECORD`. `NAV_STABILIZE` (200 ms) lets the IMU and ToF settle before the open-loop drive; `NAV_TAIL` (1 s post-stop) keeps the controller alive so the coast-down still appears in the log. `NAV_DONE` emits the ack `D: seg | S: stop_reason | F: final_tof_mm | Y: final_yaw_deg`, which tells the host both that the segment finished and *why* — `dist`, `time`, `tof`, or `backup`.
+The on-board FSM `NAV_IDLE → NAV_TURN → NAV_STABILIZE → NAV_GO → NAV_TAIL → NAV_DONE` consumes one segment per `START_RECORD`:
+
+- `NAV_IDLE`: motors off, waiting for the next `START_RECORD` to arm a fresh `(heading, distance)`.
+- `NAV_TURN`: spin in place to the target heading with the Lab 6 orientation PID. Exits on `|yaw err| < 3°`.
+- `NAV_STABILIZE`: hold heading for 200 ms so the IMU/ToF settle, then seed the KF with the current ToF for `NAV_GO`'s distance reference.
+- `NAV_GO`: drive open-loop at 70% PWM, with the orientation PID trimming L/R to hold heading. Exits on `primary_stop` (time- or KF-based), `safety_stop` (ToF < 200 mm), or `backup_stop` (3× expected time).
+- `NAV_TAIL`: motors off, controller still ticking for 1 s so `collectSamples()` captures the coast-down in the same log.
+- `NAV_DONE`: emit the ack `D: seg | S: reason | F: tof | Y: yaw` once, then drop to `NAV_IDLE`. The stop reason (`dist` / `time` / `tof` / `backup`) is what the host's rescue logic keys off.
 
 ## Feedback Control
 
@@ -288,10 +298,10 @@ Mapping after every two segment navigations.
 Mapping after every three segment navigations.
 {{ image(path="content/posts/lab12/Trial2.png", alt="Trial2", width=1200, class="center" )}}
 
-[Video Here](https://youtube.com/shorts/ReplaceMe)
+[Video Here](https://youtube.com/shorts/wdNE80N9eK0)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/embed/ReplaceMe"
+    src="https://youtube.com/embed/wdNE80N9eK0"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
