@@ -208,12 +208,12 @@ The lab9 plan is noticeably more zig-zagged. The lab9 walls are tilted by a few 
  
 ## Trial with Cell Size = 1
 
-With 1 ft cells every waypoint sits exactly on a cell center, but the planner can only avoid obstacles in 1 ft increments. Around the U-pillar and the inner box that's barely enough — the inflation buffer wraps almost the whole obstacle, and A\* takes the long way around waypoint 4 → 5.
+With 1 ft cells every waypoint sits exactly on a cell center, but the planner can only avoid obstacles in 1 ft increments. A\* takes the long way around waypoint 4 → 5.
 
-[Video Here](https://youtube.com/shorts/ReplaceMe)
+[Video Here](https://youtube.com/shorts/OPj1jjvpnlI)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/embed/ReplaceMe"
+    src="https://youtube.com/embed/OPj1jjvpnlI"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
@@ -225,14 +225,14 @@ With 1 ft cells every waypoint sits exactly on a cell center, but the planner ca
  
 ## Trial with Cell Size = 2
 
-Halving the cell size to 0.5 ft doubles the grid resolution. Waypoints still align on cell centers (integer feet hit cell centers at any 1/N-ft resolution), but the inflated buffer around the inner box shrinks from 1 ft to 0.5 ft, and `smooth_path` can step in (2, 1) or (3, 1) cell ratios that were impossible before. Headings now include values like 22.5°, and the long hop 6 → 7 collapses into a single diagonal segment.
+Halving the cell size to 0.5 ft doubles the grid resolution. Waypoints still align on cell centers (integer feet hit cell centers at any 1/N-ft resolution), but the inflated buffer around the inner box shrinks from 1 ft to 0.5 ft, and `smooth_path` can step in (2, 1) or (3, 1) cell ratios that were impossible before. Headings now include values like 22.5° and collapses the zigzag into a single diagonal segment.
 
 {{ image(path="content/posts/lab12/plan_sim_small.png", alt="plan_sim_small", width=1200, class="center" )}}
 
-[Video Here](https://youtube.com/shorts/ReplaceMe)
+[Video Here](https://youtube.com/shorts/KQI-t5f5REs)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/embed/ReplaceMe"
+    src="https://youtube.com/embed/KQI-t5f5REs"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
@@ -243,11 +243,20 @@ Halving the cell size to 0.5 ft doubles the grid resolution. Waypoints still ali
 
 # Localization
 
-In both pre-mapping trials the time-based control accumulated 1–2 ft of drift by waypoint 7. The main culprit is battery sag: the calibrated 1.7 m/s drops to ~1.4 m/s on a tired battery pack, and friction asymmetry adds yaw drift over the course of the mission. Re-localising after every hop fixes the drift, but this process is too slow at ~25 seconds per scan. Therefore, I added a periodic Bayes update from Lab 11.
-
-After every `LOCALIZE_EVERY` hops, the host runs `localize_once`: turn to world heading 0° via a zero-distance `NAV_SEG`, `RESET_YAW`, run the 360° mapping scan, feed the 18 ToF samples to `loc.update_step()` with a uniform prior, take the argmax cell as the new believed pose, `RESET_YAW` again (the scan ends at IMU +380°, world −20°), and re-plan A\* from the new belief to the *original* upcoming waypoint. The same flow doubles as a rescue on a `tof` safety stop, with up to 3 retries.
+In both pre-mapping trials the time-based control accumulated 1–2 ft of drift by waypoint 7. The main reson is battery sag: the calibrated 1.7 m/s drops to ~1.4 m/s on a tired battery pack, and friction asymmetry adds yaw drift over the course of the mission. Re-localising after every hop would fix the drift, but this process is too slow at ~25 seconds per scan. Therefore, I added a periodic Bayes update from Lab 11.
 
 {{ image(path="content/posts/lab12/replanning.png", alt="replanning", width=1200, class="center" )}}
+
+
+After every `LOCALIZE_EVERY` hops, the host runs `localize_once` in four phases:
+
+1. **Pre-scan turn.** Send a zero-distance `NAV_SEG` with target heading 0° (world +y). `NAV_GO` exits on the first tick because `dist_done` is immediately true, but `NAV_TURN` still runs to completion — the robot ends up facing +y.
+2. **Reset yaw.** The IMU yaw is zeroed so the subsequent scan starts at IMU 0 ↔ world 0, matching Lab 11's calibration condition exactly.
+3. **Mapping scan + Bayes update.** The Arduino runs the Lab 9/11 mapping FSM (`SET_MAP_DEGREES = 380`, `SET_MODE = 5`), spins 380°, and streams the 18 stabilized ToF readings back over `SEND_LOG`. The host filters out the `-1` sentinels written between `MAP_MEASURE` steps, applies the 69.85 mm offset, converts mm → m, and feeds the result to `loc.update_step()` with a uniform prior so the framework chooses the most likely `(x, y, θ)` cell.
+4. **Post-scan reset + offset bookkeeping.** The scan ended at IMU +380° = world −20° (because `INVERT_HEADING = True`). A second `RESET_YAW` zeros the IMU at the new heading and the host records `yaw_world_offset = -20°` so subsequent `world_to_tx` calls compensate correctly.
+
+I used a 380° (not 360°) sweep because the mapping FSM exits a few degrees early on the last step due to PID tolerance, and the 20° overshoot guarantees we always cover a full revolution. The −20° offset is the systematic consequence of that overshoot under the `INVERT_HEADING` sign convention.
+
 
 
 ```python
@@ -260,15 +269,14 @@ if is_loc_hop and not rescued_this_hop:
     current_world_heading = new_offset
 ```
 
-
 ## Trial 1
 Mapping after every two segment navigations.
 {{ image(path="content/posts/lab12/Trial1.png", alt="Trial1", width=1200, class="center" )}}
 
-[Video Here](https://youtube.com/shorts/ReplaceMe)
+[Video Here](https://youtube.com/shorts/ii9c4e570-Q)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
-    src="https://youtube.com/embed/ReplaceMe"
+    src="https://youtube.com/embed/ii9c4e570-Q"
     frameborder="0"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
     allowfullscreen
@@ -305,11 +313,11 @@ Trial 2 (every 3 hops) is slightly better on the right side because there's one 
 
 # Conclusion
 
-The full pipeline — A\* + line-of-sight smoothing offboard, periodic Bayes update offboard, turn-go-turn FSM onboard — runs end to end and reaches every waypoint at least once across trials. But it's brittle: drift in any one component (battery sag, ToF dropout, mapping yaw drift, neighbour-cell localization error) bleeds straight into the next plan, and the localization update was *not* enough to dominate the open-loop drift in the right half of the map.
+The full pipeline — A\* + line-of-sight smoothing offboard, periodic Bayes update offboard, turn-go-turn FSM onboard — runs end to end and reaches every waypoint at least once across the trials. Best-case timing is **~30 s** for the full 8-hop mission without localization and **~110 s** with localization at every other hop. However, the system is fragile: drift in any one component (e.g. battery sag, ToF dropout, mapping yaw drift or neighbour-cell localisation error) has an immediate impact on the next plan. The localisation update was not enough to compensate for the open-loop drift in the right half of the map.
 
-Hardest problem I faced in this lab: the world-frame to local-frame conversion when adding localization mid-mission. I originally planned to let the robot scan from whatever heading it happened to land at after the previous segment, but the Lab 11 framework expects the first ray of the scan to point along world +y. So I forced a turn-to-+y before every scan and applied a `POST_SCAN_WORLD_HEADING = -20°` correction after the 380° rotation, mirroring the Lab 11 calibration setup.
+Hardest problem I faced in this lab is the world-frame to local-frame conversion when adding localization mid-mission. I originally planned to let the robot scan from whatever heading it happened to land at after the previous segment, but the angle transformation is messed up. So I forced a turn-to-+y before every scan and mirrored the Lab 11 calibration setup.
 
-Future work: add a Bug 0 / Bug 2 wall-following fallback. The FSM already exposes three distinct stop reasons (`time`, `dist`, `tof`, `backup`), so the host can detect a ToF safety stop and switch to a wall-follow controller before re-planning. The relevant terminating logic is already in place in `NAV_GO`:
+**Future work**: add a Bug 0 / Bug 2 wall-following fallback. The FSM already exposes three distinct stop reasons (`time`, `dist`, `tof`, `backup`), so the host can detect a ToF safety stop and switch to a wall-follow controller before re-planning. The relevant terminating logic is already in place in `NAV_GO`:
 
 ```cpp
     bool safety_stop = (tof2_dist > 0.0f) && (tof2_dist < nav_safety_tof_mm);
