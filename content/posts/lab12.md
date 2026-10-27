@@ -3,254 +3,126 @@ title = "Lab 12: Path Planning and Execution"
 date = "2026-05-14"
 +++
 
-This final lab chains the planning, perception, and control primitives from earlier labs into an end-to-end mission through 9 waypoints. The host Python runs A\* with line-of-sight smoothing and the Lab 11 Bayes update; the Arduino executes one `(heading, distance)` segment at a time. They communicate over BLE via a new `MODE_NAV_SEG` FSM and a 4-field `D|S|F|Y` ack.
+This lab combines path planning, orientation control, and localization to navigate through nine waypoints. I used A\* on the host computer to generate a path, then sent each straight segment to the Arduino over BLE. For the navigation runs, I used orientation PID for turning and heading correction, with time-based stopping for forward distance. I also tested periodic Bayes localization to correct the estimated position. The robot followed the overall route, but wall contacts and incorrect localization updates limited its accuracy.
 
-# System Architecture
+# Path Planning
 
-Offboard (host Python) owns the world map, the Bayes filter, and A\*. Onboard (Arduino) owns the IMU/ToF and closes a control loop at ~200 Hz.
+The waypoint coordinates are in feet:
 
-# Segment Navigation
-
-The atomic motion primitive is one turn-go segment: rotate to a world-frame heading, then drive forward for a commanded distance. Arguments arrive as `SET_NAV_TARGET heading_deg|distance_m|seg_id`, followed by `START_RECORD`. The Arduino tracks no world position — the host owns the world model.
-
-## Commands & State Machine
-
-Four new BLE commands plus a `MODE_NAV_SEG` value for `SET_MODE`:
-
-- `SET_NAV_TARGET heading|dist|seg_id` — store the next segment
-- `SET_NAV_CALIB pwm|speed_mps` — set `nav_go_pwm` (70%) and the calibrated forward speed
-- `SET_NAV_DIST_MODE 0|1` — 0 = time-based stop, 1 = KF-integrated stop
-- `RESET_YAW` — zero the relative-yaw reference to switch between local and world frames
-
-The FSM `NAV_IDLE → NAV_TURN → NAV_STABILIZE → NAV_GO → NAV_TAIL → NAV_DONE` consumes one segment per `START_RECORD`:
-
-- `NAV_IDLE`: motors off, waiting for `START_RECORD`.
-- `NAV_TURN`: spin in place with Lab 6 PID, exits on `|yaw err| < 3°`.
-- `NAV_STABILIZE`: hold heading 200 ms so IMU/ToF settle, then seed the KF.
-- `NAV_GO`: open-loop 70% PWM with PID trimming L/R. Exits on `primary_stop` (time/KF), `safety_stop` (ToF < 200 mm), or `backup_stop` (3× expected time).
-- `NAV_TAIL`: motors off, controller still ticking for 1 s so coast-down is logged.
-- `NAV_DONE`: emit ack `D: seg | S: reason | F: tof | Y: yaw` once. The reason (`dist`/`time`/`tof`/`backup`) drives the rescue logic.
-
-## Feedback Control
-
-### Orientation Control
-
-`NAV_TURN` reuses the Lab 6 orientation PID directly ($K_p = 2.5, K_i = 1.2, K_d = 0.25$), exiting on $|err| < 3°$. The same controller produced clean 20° steps in Lab 9 mapping, so drift over a single rotation is negligible.
-
-```cpp
-case NAV_TURN:
-{
-    // Spin in place to the target heading using orient PID
-    orient_pid.setpoint = nav_target_heading_deg;
-    float angular = orient_pid.compute(orient_sensor, dt, true);
-    applyAngularOutput(-angular);
-    if (fabs(orient_pid.error_value) < NAV_TURN_TOL_DEG)
-    {
-        nav_state = NAV_STABILIZE;
-        nav_phase_start_us = current_control_time;
-    }
-    break;
-}
-```
-
-For `NAV_GO` I overlay the orientation PID onto the open-loop forward command so the robot holds heading while driving straight. Mixed L/R outputs are clipped jointly so the heading correction always wins over the forward bias.
-
-```cpp
-case NAV_GO:
-{
-    // Open-loop forward at the calibrated PWM, with orientation PID mixed into left/right to keep the heading constant
-    float angular = orient_pid.compute(orient_sensor, dt, true);
-    float left_raw = nav_go_pwm - angular;
-    float right_raw = nav_go_pwm + angular;
-    float max_raw = max(fabs(left_raw), fabs(right_raw));
-    if (max_raw > 100.0f)
-    {
-        float scale = 100.0f / max_raw;
-        left_raw *= scale;
-        right_raw *= scale;
-    }
-    left_motor_pct = constrain(left_raw * MOTOR_SCALE, -100.0f, 100.0f);
-    right_motor_pct = constrain(right_raw * MOTOR_SCALE, -100.0f, 100.0f);
-    setMotors(left_motor_pct, right_motor_pct);
-
-    ....
-}
-```
-
-### Distance Contorl
-
-The key design choice for `NAV_GO` is *when to stop*. I implemented two modes and compared them.
-
-#### TOF-value with KL-filter
-
-The Lab 7/8 KF is seeded with the front ToF on entry to `NAV_GO`, runs `kfPredict` every tick on the motor command, and `kfUpdate` only on fresh ToF. Traveled distance is `|kf_pos_start − kf_pos_now|`; stop when ≥ target.
-
-```cpp
-case NAV_STABILIZE:
-{
-    orient_pid.setpoint = nav_target_heading_deg;
-    float angular = orient_pid.compute(orient_sensor, dt, true);
-    applyAngularOutput(-angular);
-    if (current_control_time - nav_phase_start_us > NAV_STABILIZE_US)
-    {
-        setMotors(0.0f, 0.0f);
-        // Seed the Kalman filter with the current ToF reading
-        float kf_init = (tof2_dist > 10.0f && tof2_dist < 6000.0f)
-                            ? tof2_dist
-                            : NAV_KF_INIT_FALLBACK_MM;
-        dist_pid.sensor_mode = PIDController::KALMAN;
-        dist_pid.resetKalman(kf_init);
-        nav_kf_pos_start_mm = dist_pid.kfPosition();
-        nav_dist_traveled_m = 0.0f;
-        nav_state = NAV_GO;
-        nav_phase_start_us = current_control_time;
-    }
-    break;
-}
-```
-
-
-```cpp
-case NAV_GO:
-{
-    // Open-loop forward at the calibrated PWM, with orientation PID
-    //...
-    // KF-Filter Control
-    dist_pid.output_value = nav_go_pwm;
-    dist_pid.kfPredict(dt);
-    if (tof2_updated && tof2_dist > 10.0f && tof2_dist < 6000.0f)
-    {
-        dist_pid.kfUpdate(tof2_dist);
-    }
-    dist_pid.sensor_value = dist_pid.kfPosition();
-    nav_dist_traveled_m =
-        fabs(nav_kf_pos_start_mm - dist_pid.kfPosition()) / 1000.0f;
-    bool dist_done = nav_dist_traveled_m >= nav_target_dist_m;
-    
-}
-```
-#### Time Elasped Control
-
-The alternative is to stop after `distance / nav_calib_speed_mps` seconds. A tape-measured 3 m run at 70% PWM averaged 1.7 m/s across three trials (σ < 0.05 m/s), giving `elapsed_s ≈ 1.76` for a 2 m segment.
-
-```cpp
-case NAV_GO:
-{
-    float elapsed_s = (current_control_time - nav_phase_start_us) / 1.0e6f;
-    float expected_s = (nav_calib_speed_mps > 1e-3f)
-                            ? nav_target_dist_m / nav_calib_speed_mps
-                            : 0.0f;
-    bool time_done = elapsed_s >= NAV_TIME_SAFETY_MULT * expected_s;
-}
-```
-
-#### Analysis
-
-Test: start 3 m from a wall, command heading 0° and distance 2 m — the car should stop ~1 m from the wall.
-
-{{ image(path="content/posts/lab12/Nav_go.png", alt="Time based vs KF Filter", width=1200, class="center" )}}
-
-Time mode landed within ~10 cm of the 1 m mark. KF mode overshot most trials: `kfPredict` misses the speed ramp-up, so integrated distance lags true travel and the stop fires late. KF also drifts when the front ToF goes invalid. So **time-based is primary**, with KF as a 3× expected-time backup against a stuck integrator.
-
-
-# Path Execution
-
-Goal: hit these 9 waypoints (feet), from (-4, -3) to (0, 0):
-
-1. (-4, -3)    <--start
-2. (-2, -1)
-3. (1, -1)
-4. (2, -3)
-5. (5, -3)
-6. (5, -2)
-7. (5, 3)
-8. (0, 3)
-9. (0, 0)      <--end
+`(-4,-3) → (-2,-1) → (1,-1) → (2,-3) → (5,-3) → (5,-2) → (5,3) → (0,3) → (0,0)`
 
 {{ image(path="content/posts/lab12/path.png", alt="path", width=1200, class="center" )}}
 
-Each segment uses only the $(\delta_{rot1}, \delta_{trans})$ pair of the Lab 10 odometry model — `heading_deg` for $\delta_{rot1}$ (absolute world heading), `distance` for $\delta_{trans}$. $\delta_{rot2}$ is dropped because the next segment's `NAV_TURN` absorbs it.
+I compared two maps: the simulator geometry and the measured map from Lab 9. The final mission notebook uses the simulator geometry for planning and `world.yaml` for localization. The Lab 9 map provides a separate planning comparison.
 
-For each pair of waypoints the host calls A\*, smooths the result, and walks the segment list — each becomes a `SET_NAV_TARGET` + `START_RECORD` + `await NAV_DONE` BLE round trip.
+## A* and Path Smoothing
 
-```python
-async def send_segment(seg_id, heading_deg, dist_m, timeout_s=20.0, poll_s=0.05):
-    last_ack.pop(seg_id, None)
-    ble.send_command(CMD.SET_NAV_TARGET, f"{heading_deg}|{dist_m}|{seg_id}")
-    await asyncio.sleep(0.10)
-    ble.send_command(CMD.START_RECORD, "")
-    t0 = time.time()
-    while seg_id not in last_ack:
-        if time.time() - t0 > timeout_s:
-            return None
-        await asyncio.sleep(poll_s)
-    return last_ack[seg_id]
-```
+I converted each map into an occupancy grid. A cell is occupied when its center is outside the room, inside an obstacle, or within the robot radius of a wall. Using an 18 cm × 10 cm chassis gives a bounding radius of approximately 0.103 m. This accounts for the robot footprint, but adds no extra margin for execution error.
 
-
-## A-star Wayplanning
-
-The occupancy grid is built by point-in-polygon on cell centers, then inflated by the chassis bounding-circle radius $\sqrt{0.18^2 + 0.10^2}/2 \approx 0.10$ m so the robot stays clear of every wall during in-place rotation.
-
-### Algorithm
-
-A\* expands nodes by $f(n) = g(n) + h(n)$ — $g(n)$ is actual cost from start, $h(n)$ an admissible heuristic. I use edge cost $1$ for cardinals and $\sqrt 2$ for diagonals with Euclidean $h(n) = \sqrt{(n_x - g_x)^2 + (n_y - g_y)^2}$ (≤ any grid path, so admissible). Diagonals are blocked when either orthogonal neighbour is occupied, and start/goal are forced passable so endpoints inside the inflation buffer still plan.
-
-```python
-def astar(grid, start, goal):
-    grid = grid.copy(); grid[start] = 0; grid[goal] = 0
-    g, parent, closed = {start: 0.0}, {}, set()
-    h  = lambda c: math.hypot(c[0] - goal[0], c[1] - goal[1])
-    pq = [(h(start), start)]
-    while pq:
-        _, cur = heapq.heappop(pq)
-        if cur in closed: continue
-        if cur == goal:
-            path = [cur]
-            while cur in parent:
-                cur = parent[cur]; path.append(cur)
-            return list(reversed(path))
-        closed.add(cur)
-        for dx, dy, step in _NEIGHBORS:           # 4 cardinals + 4 diagonals
-            n = (cur[0] + dx, cur[1] + dy)
-            if not in_bounds(n) or grid[n]: continue
-            if dx and dy and (grid[cur[0]+dx, cur[1]] or grid[cur[0], cur[1]+dy]):
-                continue                          # block corner-clipping diagonals
-            ng = g[cur] + step
-            if ng < g.get(n, math.inf):
-                g[n], parent[n] = ng, cur
-                heapq.heappush(pq, (ng + h(n), n))
-    return []
-```
-
-`plan_segments` wraps this with cell/world conversion and the smoothing pass described under Trial 2:
+A\* uses eight neighbors, with costs of 1 for straight moves and $\sqrt{2}$ for diagonal moves. The heuristic is Euclidean distance to the goal. A\* expands the cell with the lowest $f(n) = g(n) + h(n)$, combining the distance already traveled with the estimated remaining distance. This favors short routes while accounting for obstacles. Diagonal moves are blocked when either adjacent orthogonal cell is occupied. After planning, `smooth_path` replaces intermediate turns with straight segments that pass the grid line-of-sight check.
 
 ```python
 def plan_segments(start_ft, goal_ft):
     sa = world_to_cell(start_ft, origin, CELL_SIZE)
-    sb = world_to_cell(goal_ft,  origin, CELL_SIZE)
+    sb = world_to_cell(goal_ft, origin, CELL_SIZE)
     cells = astar(grid, sa, sb)
     if not cells:
         raise RuntimeError(f"No path {start_ft} -> {goal_ft}")
     smoothed = smooth_path(cells, grid)
-    return cells_to_segments(smoothed, origin, CELL_SIZE,
-                             simplify_first=False)
+    return cells_to_segments(
+        smoothed, origin, CELL_SIZE, simplify_first=False)
 ```
 
-I planned the same 9 waypoints over two maps: the "sim" map from `world.yaml` and the "lab9" map I derived from the merged Lab 9 scatter plot.
+{{ image(path="content/posts/lab12/plan_sim.png", alt="Earlier A-star plan on the simulator map with 1 ft cells", width=1200, class="center" )}}
 
-{{ image(path="content/posts/lab12/plan_sim.png", alt="plan_sim", width=1200, class="center" )}}
+The simulator map has axis-aligned walls. In this earlier 1 ft plan, the path from `(1,-1)` to `(2,-3)` includes an intermediate turn.
 
-{{ image(path="content/posts/lab12/plan_lab9.png", alt="plan_lab9", width=1200, class="center" )}}
+{{ image(path="content/posts/lab12/plan_lab9.png", alt="Earlier A-star plan on the measured Lab 9 map with 1 ft cells", width=1200, class="center" )}}
 
-The lab9 plan is more zig-zagged because its walls are tilted a few degrees off the integer-foot axes, so the inflated grid eats more cells along diagonals and `smooth_path` finds fewer long shortcuts. The sim plan, with axis-aligned walls, collapses most hops to 1–2 segments.
+The Lab 9 map has tilted walls and a different obstacle boundary. Its saved plan takes a wider route around the right side of the box. Both figures number the waypoints from 0 to 8.
 
- 
-## Trial with Cell Size = 1
+## Grid Resolution
 
-With 1 ft cells, every waypoint sits on a cell center but obstacles can only be avoided in 1 ft steps. A\* takes the long way around waypoint 4 → 5.
+I later reduced the planning cell size from 1 ft to **0.5 ft**. The saved finer-grid plan uses a direct segment from `(1,-1)` to `(2,-3)`. The physical robot radius remains 0.103 m; changing cell size changes how the map is sampled.
 
-[Video Here](https://youtube.com/shorts/OPj1jjvpnlI)
+{{ image(path="content/posts/lab12/plan_sim_small.png", alt="Simulator plan with 0.5 ft cells and a smoothed diagonal segment", width=1200, class="center" )}}
+
+I also changed the localization grid in `world.yaml`:
+
+```yaml
+cell_size_x: 0.1524
+cell_size_y: 0.1524
+cell_size_a: 20
+max_cells_x: 24
+max_cells_y: 18
+max_cells_a: 18
+```
+
+This gives 7,776 pose cells. The saved final notebook output confirms this grid through its uniform prior of `1/7776`. Planning and localization therefore use the same spatial resolution, although their cell centers differ. Localization results are converted to world coordinates before being rounded to a planning cell.
+
+# Local Control
+
+Each segment contains a heading and distance. The Arduino turns toward the heading, stabilizes for 200 ms, drives forward, and stops. It then waits 1 s to record coast-down before returning a completion message.
+
+| Function | Method used in navigation |
+| --- | --- |
+| Turn to the segment heading | Orientation PID, gains `2.5, 1.2, 0.25` |
+| Hold heading while driving | Same PID mixed into the left and right motor commands |
+| Forward motion | Fixed 70% command with calibrated speed of 1.7 m/s |
+| Primary distance stop | Elapsed drive time, `distance / calibrated speed` |
+| Obstacle stop | Front ToF below 200 mm |
+| Backup stop | Elapsed drive time above three times the expected duration |
+
+During forward motion, I subtract the PID correction from one motor command and add it to the other. This adjusts heading while maintaining forward motion. It does not measure the remaining travel distance, so accurate heading alone cannot guarantee arrival.
+
+The mission explicitly selects `SET_NAV_DIST_MODE = 0`. The KF still runs, but its distance estimate does not trigger the primary stop in this mode. For a 2 m segment, the expected drive time is $2/1.7 \approx 1.18$ s, excluding the turn, stabilization, and coast-down.
+
+```cpp
+float elapsed_s = (current_control_time - nav_phase_start_us) / 1.0e6f;
+float expected_s = (nav_calib_speed_mps > 1e-3f)
+                       ? nav_target_dist_m / nav_calib_speed_mps : 0.0f;
+bool dist_done = nav_dist_traveled_m >= nav_target_dist_m;
+bool time_done = elapsed_s >= NAV_TIME_SAFETY_MULT * expected_s;
+bool primary_stop = nav_use_kf_dist ? dist_done : time_done;
+const char *primary_reason = nav_use_kf_dist ? "dist" : "time";
+bool backup_stop = elapsed_s >= 3.0f * expected_s;
+bool safety_stop = tof2_dist > 0.0f && tof2_dist < nav_safety_tof_mm;
+
+if (primary_stop || backup_stop || safety_stop)
+{
+    setMotors(0.0f, 0.0f);
+    left_motor_pct = right_motor_pct = 0.0f;
+    if (safety_stop)
+        nav_stop_reason = "tof";
+    else if (primary_stop)
+        nav_stop_reason = primary_reason;
+    else
+        nav_stop_reason = "backup";
+    nav_ack_pending = true;
+    nav_state = NAV_TAIL;
+    nav_phase_start_us = current_control_time;
+}
+```
+
+## Distance Control Comparison
+
+I also tested stopping from the change in Kalman-filtered front ToF distance. The filter is initialized before driving, predicts between measurements, and updates when a fresh valid ToF reading arrives. The stopping estimate is the absolute difference between the initial and current filtered range. This estimate depends on the sensor continuing to observe a suitable wall as the robot moves.
+
+{{ image(path="content/posts/lab12/Nav_go.png", alt="Saved time-based and KF stopping tests with front ToF range and motor PWM", width=1200, class="center" )}}
+
+These saved tests have different initial ranges: approximately 2.48 m for time mode and 1.50 m for KF mode. Their final ranges are approximately 1.27 m and 0.22 m. Therefore, the shared 1 m goal line does not provide a valid accuracy comparison. The dotted lines also start at the beginning of the segment, before forward driving begins. I selected time mode for navigation, but these traces alone do not establish its repeatability or isolate the cause of the KF error.
+
+# Path Execution
+
+The host plans from its current estimated position to the next waypoint, sends each segment, and waits for completion. A hop is the move between two waypoints and may contain several segments. If a segment stops on ToF, the host performs a rescue scan and replans to the same waypoint. This can recover from an interrupted move, but depends on the new position estimate being correct.
+
+## Baseline Runs
+
+The following runs compare the earlier 1 ft plan and the later 0.5 ft plan without periodic localization. The route is recognizable, but the wall contacts show that a valid planned path does not guarantee accurate execution.
+
+**Earlier run with 1 ft planning cells**
+
+[Watch the 1 ft run](https://youtube.com/shorts/OPj1jjvpnlI)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/OPj1jjvpnlI"
@@ -261,15 +133,9 @@ With 1 ft cells, every waypoint sits on a cell center but obstacles can only be 
   </iframe>
 </div>
 
+**Later run with 0.5 ft planning cells**
 
- 
-## Trial with Cell Size = 2
-
-Halving cell size to 0.5 ft doubles grid resolution and shrinks the inflation buffer from 1 ft to 0.5 ft. Raw 8-connected A\* only emits 45°-multiple headings, so I run `smooth_path` on top — a greedy string-puller that replaces zig-zag runs with the longest straight segments still clear via `line_of_sight`. After smoothing, headings become arbitrary (e.g. $\mathrm{atan2}(1, -2) \approx 153.4°$) and one move can replace 2–3 raw 45° hops. With the finer grid, `smooth_path` steps in (2, 1) or (3, 1) cell ratios, and the zig-zag at hop 6 → 7 collapses into a single diagonal.
-
-{{ image(path="content/posts/lab12/plan_sim_small.png", alt="plan_sim_small", width=1200, class="center" )}}
-
-[Video Here](https://youtube.com/shorts/KQI-t5f5REs)
+[Watch the 0.5 ft run](https://youtube.com/shorts/KQI-t5f5REs)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/KQI-t5f5REs"
@@ -280,40 +146,23 @@ Halving cell size to 0.5 ft doubles grid resolution and shrinks the inflation bu
   </iframe>
 </div>
 
+## Periodic Localization
 
-# Localization
+I reused the Lab 11 update step with a uniform prior. For each candidate pose, the filter compares the measured ranges with the expected map ranges. It multiplies their Gaussian likelihoods and normalizes the belief, then selects the most probable pose. A uniform prior allows any pose to win, including a distant incorrect match. Before scanning, the robot turns toward the estimated world heading of 0° and resets its yaw. The mapping FSM starts measurements after its first 20° turn. A 380° command allows measurements through 360° before the final turn. The host uses the first 18 valid ranges, applies the 69.85 mm sensor offset, and updates the position estimate.
 
-In both pre-mapping trials the time-based control accumulated 1–2 ft of drift by waypoint 7 — battery sag drops the calibrated 1.7 m/s to ~1.4 m/s on a tired pack, and friction asymmetry adds yaw drift. Re-localising every hop would fix this, but at ~25 s per scan it is too slow. So I added a periodic Bayes update from Lab 11.
+After scanning, the host resets yaw again and assumes the robot faces −20° in the navigation frame. It does not use the Bayes heading estimate to correct this offset. Each observation call includes 22 s of waiting for scanning and 8 s for log transfer, before other overhead.
 
 {{ image(path="content/posts/lab12/replanning.png", alt="replanning", width=1200, class="center" )}}
 
+The live plotter shows targets, planned motion, and the localization estimate. Its green markers are commanded targets, rather than independent ground-truth measurements.
 
-After every `LOCALIZE_EVERY` hops, `localize_once` runs four phases:
+More frequent scans offer earlier position corrections but increase runtime. Across eight hops, intervals of two and three require four and three scheduled scans respectively, including the final hop; rescue scans can change the total.
 
-1. **Pre-scan turn.** A zero-distance `NAV_SEG` with heading 0° rotates the robot to face world +y.
-2. **Reset yaw.** `RESET_YAW` zeros the IMU so the scan starts at IMU 0 ↔ world 0.
-3. **Scan + Bayes update.** The mapping FSM (`SET_MODE = 5`, `SET_MAP_DEGREES = 380`) spins and streams 18 ToF readings; the host applies the 69.85 mm offset and runs `loc.update_step()` with a uniform prior.
-4. **Post-scan reset.** The scan ends at IMU +380° = world −20° (under `INVERT_HEADING = True`); a second `RESET_YAW` plus `yaw_world_offset = -20°` keeps `world_to_tx` correct.
+**Trial 1: localization every two waypoint hops**
 
-The 380° (not 360°) sweep absorbs the PID tolerance on the last step; the −20° offset is its systematic consequence.
+{{ image(path="content/posts/lab12/Trial1.png", alt="Trial 1 planned waypoints and stored position estimates", width=1200, class="center" )}}
 
-
-
-```python
-is_loc_hop = (hop % LOCALIZE_EVERY == 0) or (hop == n_hops)
-if is_loc_hop and not rescued_this_hop:
-    x_ft, y_ft, _theta, new_offset = await localize_once(
-        yaw_world_offset, seg_id_base=hop * 100 + 90)
-    believed_ft           = (x_ft, y_ft)
-    yaw_world_offset      = new_offset
-    current_world_heading = new_offset
-```
-
-## Trial 1
-Mapping after every two segment navigations.
-{{ image(path="content/posts/lab12/Trial1.png", alt="Trial1", width=1200, class="center" )}}
-
-[Video Here](https://youtube.com/shorts/ii9c4e570-Q)
+[Watch localization Trial 1](https://youtube.com/shorts/ii9c4e570-Q)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/ii9c4e570-Q"
@@ -324,11 +173,11 @@ Mapping after every two segment navigations.
   </iframe>
 </div>
 
-## Trial2
-Mapping after every three segment navigations.
-{{ image(path="content/posts/lab12/Trial2.png", alt="Trial2", width=1200, class="center" )}}
+**Trial 2: localization every three waypoint hops**
 
-[Video Here](https://youtube.com/shorts/wdNE80N9eK0)
+{{ image(path="content/posts/lab12/Trial2.png", alt="Trial 2 plans, rescue plans, and stored position estimates", width=1200, class="center" )}}
+
+[Watch localization Trial 2](https://youtube.com/shorts/wdNE80N9eK0)
 <div style="width:100%;height:0;position:relative;padding-bottom:64.923%;">
   <iframe
     src="https://youtube.com/embed/wdNE80N9eK0"
@@ -339,48 +188,24 @@ Mapping after every three segment navigations.
   </iframe>
 </div>
 
-## Discussion
+The blue points are stored position estimates. When localization is skipped, the code assigns the intended waypoint as the estimated position. Connecting these points does not show the measured physical trajectory. In Trial 2, green arrows show planned segments and orange dashes show rescue plans after a ToF stop.
 
-In the plotter, blue points are the believed trajectory (one per hop), grey dashes the designed pathway, green arrows the initial A\* segments, and orange dashes the rescue re-plans. Both trials show the same recovery pattern: an overshoot drops the belief beyond the goal and A\* turns the robot back; an undershoot produces a shorter remaining path that still hits the waypoint.
+# Discussion
 
-Still, localization performs *worse* than the no-localization baseline. Three reasons:
+The saved final notebook run illustrates the localization problem:
 
-- **Belief drift.** Waypoints 5–7 are feature-poor and snap to a neighbour cell, injecting ≥ 0.3 m systematic error into the next plan instead of removing it.
-- **Scan yaw drift.** After two scans the world-to-IMU offset is off by ~5°, biasing every subsequent heading. Trial 1's believed trajectory rotates clockwise after waypoint 5 because of this.
-- **Battery cost.** Each scan drains the pack faster than straight driving, so 1.7 m/s degrades faster between hops.
+| Update | Intended goal in ft | Estimated position and framework angle | Peak probability |
+| --- | --- | --- | --- |
+| After hop 2 | `(1,-1)` | `(1.25,-1.75,110°)` | `1.0` |
+| After hop 4 | `(5,-3)` | `(4.75,2.75,-170°)` | `0.9999734` |
+| Rescue at hop 5 | `(5,-2)` | `(6.25,1.75,-170°)` | `0.9999849` |
 
-Trial 2 (every 3 hops) is slightly better on the right side with one fewer scan but loses the late correction at 7 → 8 that Trial 1 gets.
+Positions are in feet; the framework angle uses +x as 0° and counterclockwise positive. These are intended goals, not measured ground truth. After hop 4, the estimate is 5.76 ft from the goal, followed by two ToF stops during hop 5. A high posterior probability therefore does not establish physical accuracy.
+
+IMU drift may contribute, but I did not isolate it from heading-reference or scan errors. A 5° heading error produces about 8.7 cm of lateral error over a 1 m straight segment. The much larger position jump requires checking the scan matching as well. The update uses range samples by index and ignores their measured bearings, while the post-scan heading is fixed at −20°. Both assumptions need validation before attributing the result to drift.
+
+Forward motion is also sensitive to acceleration, battery condition, and coast-down because distance is controlled by time. At the configured 1.7 m/s, a 200 mm front range corresponds to only about 0.12 s of travel. The ToF stop cannot guarantee enough braking distance or detect every side contact. I would first test lower speed, calibrate short segments from rest, measure stopping distance, and add clearance beyond the chassis radius. I would also preserve the motion estimate between scans and reject implausible localization jumps before replanning.
 
 # Conclusion
 
-The pipeline runs end-to-end and hits every waypoint at least once: **~30 s** without localization, **~110 s** with localization every other hop. But it's fragile — drift in any one component (battery sag, ToF dropout, scan yaw, neighbour-cell localisation) bleeds into the next plan, and the Bayes update was not enough to compensate for open-loop drift on the right half of the map.
-
-Hardest problem: the world ↔ local frame conversion when adding mid-mission localization. I originally let the robot scan from whatever heading it landed at, but the angle transform broke. Forcing a turn-to-+y before every scan (mirroring Lab 11's calibration) fixed it.
-
-**Future work**: a Bug 0/2 wall-following fallback. The FSM already exposes four stop reasons (`dist`/`time`/`tof`/`backup`), so the host can detect a ToF stop and switch to wall-follow before re-planning. The terminating logic is already in `NAV_GO`:
-
-```cpp
-    bool safety_stop = (tof2_dist > 0.0f) && (tof2_dist < nav_safety_tof_mm);
-
-    bool primary_stop = nav_use_kf_dist ? dist_done : time_done;
-    const char *primary_reason = nav_use_kf_dist ? "dist" : "time";
-    bool backup_stop = (elapsed_s >= 3.0f * expected_s);
-
-    if (primary_stop || backup_stop || safety_stop)
-    {
-        setMotors(0.0f, 0.0f);
-        left_motor_pct = 0.0f;
-        right_motor_pct = 0.0f;
-        if (safety_stop)
-            nav_stop_reason = "tof";
-        else if (primary_stop)
-            nav_stop_reason = primary_reason;
-        else
-            nav_stop_reason = "backup"; 
-
-        nav_ack_pending = true;
-        nav_state = NAV_TAIL;
-        nav_phase_start_us = current_control_time;
-    }
-    break;
-```
+A\* produced useful paths on both maps, and the turn-and-drive controller executed the overall route. The main limitations were forward-distance accuracy and accepting localization results without validating them. Improving these two parts would make the existing planning approach more reliable.

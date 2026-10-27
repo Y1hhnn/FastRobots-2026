@@ -2,3 +2,5 @@
 content/.DS_Store
 content/posts/.DS_Store
 themes/.DS_Store
+/static/processed_images/
+/public/
