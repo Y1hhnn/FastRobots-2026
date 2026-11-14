@@ -1,6 +1,10 @@
 +++
 title = "Lab 7: Kalman Filter"
 date = "2026-03-25"
+
+[extra.preview]
+image = "content/posts/lab7/100pct_3m_car2.png"
+alt = "Measured and estimated distance, motor PWM, and velocity during a Kalman filter run."
 +++
 
 The objective of this lab is to implement a Kalman Filter to improve state estimation for the robot’s motion, enabling faster and more accurate control. 

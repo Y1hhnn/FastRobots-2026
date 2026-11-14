@@ -1,6 +1,11 @@
 +++
 title = "Lab 5: Linear PID Control and Linear Interpolation"
 date = "2026-03-11"
+
+[extra.preview]
+video = "previews/lab5.mp4"
+alt = "The robot approaches a wall from four meters away under PD control."
+poster = "previews/lab5.jpg"
 +++
 
 This lab aims to design and validate a fast, reliable closed-loop position controller for the robot using ToF distance feedback, with the specific goal of driving toward a wall and stopping at a desired stand-off distance.

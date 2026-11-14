@@ -1,6 +1,10 @@
 +++
 title = "Lab 12: Path Planning and Execution"
 date = "2026-05-14"
+
+[extra.preview]
+image = "content/posts/lab12/Trial2.png"
+alt = "Planned segments, rescue paths, and stored position estimates from navigation trial 2."
 +++
 
 This lab combines path planning, orientation control, and localization to navigate through nine waypoints. I used A\* on the host computer to generate a path, then sent each straight segment to the Arduino over BLE. For the navigation runs, I used orientation PID for turning and heading correction, with time-based stopping for forward distance. I also tested periodic Bayes localization to correct the estimated position. The robot followed the overall route, but wall contacts and incorrect localization updates limited its accuracy.

@@ -20,6 +20,7 @@ style = "inline"
 theme = "ayu-dark"
 
 [extra]
+stylesheets = ["posts.css"]
 theme = "auto"
 socials = [
   { name = "github", url = "https://github.com/Y1hhnn/ble_robot_1.4.git", icon = "github" },

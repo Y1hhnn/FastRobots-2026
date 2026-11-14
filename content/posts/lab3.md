@@ -1,6 +1,10 @@
 +++
 title = "Lab 3: Time of Flight Sensors"
 date = "2026-02-25"
+
+[extra.preview]
+image = "content/posts/lab3/sketch.png"
+alt = "Wiring diagram for the two time-of-flight sensors and the Artemis."
 +++
 
 This lab focuses on integrating and evaluating a Time-of-Flight (ToF) distance sensor (VL53L1X) with the Artemis microcontroller to measure distances to nearby objects. The objective is to characterize the sensor’s performance—including range, accuracy, and measurement speed—and to implement efficient code that collects time-stamped distance data and transmits it via Bluetooth.

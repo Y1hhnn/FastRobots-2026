@@ -1,6 +1,10 @@
 +++
 title = "Lab 10: Grid Localization using Bayes Filter"
 date = "2026-04-22"
+
+[extra.preview]
+image = "content/posts/lab10/sim.png"
+alt = "Simulated trajectories comparing odometry, Bayes filter estimates, and ground truth."
 +++
 
 This lab implements a discrete Bayes filter over a 3D grid of robot states $(x, y, \theta)$, runs it on a recorded simulation trajectory, and compares the estimated pose against the ground truth.

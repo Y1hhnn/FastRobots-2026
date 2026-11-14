@@ -1,6 +1,11 @@
 +++
 title = "Lab 8: Stunts!"
 date = "2026-04-08"
+
+[extra.preview]
+video = "previews/lab8.mp4"
+alt = "The robot flips near the wall and drives back across the starting line in trial 3."
+poster = "previews/lab8.jpg"
 +++
 
 The objective of this lab is to integrate sensing, control, and actuation into a unified system capable of executing a fast “flip” stunt, where the robot drives forward at high speed, performs a flip near the wall, and returns past the starting line.

@@ -1,6 +1,11 @@
 +++
 title = "Lab 6: Orientation Control"
 date = "2026-03-18"
+
+[extra.preview]
+gif = "previews/lab6.gif"
+alt = "The orientation controller turns the robot back toward its target heading."
+poster = "previews/lab6.jpg"
 +++
 
 The objective of this lab is to design, implement, and evaluate an orientation controller for the robot using the IMU, specifically by estimating yaw from gyroscope data and applying a P/PI/PD/PID-style controller to command differential motor motion for in-place rotation.

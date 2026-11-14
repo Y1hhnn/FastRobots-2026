@@ -1,5 +1,5 @@
 +++
-paginate_by = 7
+template = "posts.html"
 title = "Posts"
 transparent = true
 sort_by = "date"

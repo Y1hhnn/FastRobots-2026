@@ -1,6 +1,10 @@
 +++
 title = "Lab 11: Localization on the Real Robot"
 date = "2026-04-29"
+
+[extra.preview]
+image = "content/posts/lab11/final_map.png"
+alt = "Mapped scans and estimated robot positions from the real-world localization trials."
 +++
 
 This lab extended the localization framework from simulation to the physical robot. While Lab 10 used both the prediction and update steps of the Bayes filter, this lab focused only on the update step using full 360-degree ToF sensor scans. I focused on how localization performance changes when moving to a real-world system with sensor noise, imperfect rotation, and hardware limitations. 

@@ -1,6 +1,10 @@
 +++
 title = "Lab 2: IMU"
 date = "2026-02-11"
+
+[extra.preview]
+image = "content/posts/lab2/IMU_setup.png"
+alt = "The IMU breakout board connected to the Artemis Nano."
 +++
 
 In this lab, I integrated an inertial measurement unit (IMU) sensor into the autonomous robot platform I previously built, using the SparkFun RedBoard Artemis Nano microcontroller. The goal is to sense the robot's motion and orientation in real time. Signal processing techniques were applied to achieve reliable state estimation.

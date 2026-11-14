@@ -1,0 +1,48 @@
+{% extends "section.html" %}
+
+{% block post_list %}
+    <main class="post-list posts-index">
+        <ul>
+            {% for page in section.pages %}
+                <li class="list-item">
+                    <article class="post-header">
+                        <time datetime="{{ page.date }}">{{ page.date | date(format="%Y-%m-%d") }}</time>
+                        <div>
+                            <h1 class="title">
+                                <a href="{{ page.permalink }}">{{ page.title }}</a>
+                                {% if page.draft %}<span class="draft-label">DRAFT</span>{% endif %}
+                            </h1>
+                            {% if page.description or page.summary %}
+                                <div class="meta">{{ page.description | default(value=page.summary) | safe }}</div>
+                            {% endif %}
+                            {% if page.extra.preview %}
+                                {% set preview = page.extra.preview %}
+                                {% if preview.video %}
+                                    <video class="post-preview" controls playsinline preload="none"
+                                           poster="{{ get_url(path=preview.poster) }}" aria-label="{{ preview.alt }}">
+                                        <source src="{{ get_url(path=preview.video) }}" type="video/mp4">
+                                        <a href="{{ get_url(path=preview.video) }}">Watch the video</a>
+                                    </video>
+                                {% else %}
+                                    <a class="post-preview-link" href="{{ page.permalink }}" aria-label="{{ page.title }}">
+                                        {% if preview.gif %}
+                                            <picture>
+                                                <source media="(prefers-reduced-motion: reduce)" srcset="{{ get_url(path=preview.poster) }}">
+                                                <img class="post-preview" src="{{ get_url(path=preview.gif) }}"
+                                                     alt="{{ preview.alt }}" loading="lazy" decoding="async">
+                                            </picture>
+                                        {% else %}
+                                            {% set image = resize_image(path=preview.image, width=960, height=600, op="fit", format="webp", quality=85) %}
+                                            <img class="post-preview" src="{{ image.url }}" width="{{ image.width }}" height="{{ image.height }}"
+                                                 alt="{{ preview.alt }}" loading="lazy" decoding="async">
+                                        {% endif %}
+                                    </a>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </article>
+                </li>
+            {% endfor %}
+        </ul>
+    </main>
+{% endblock post_list %}

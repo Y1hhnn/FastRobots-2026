@@ -1,6 +1,10 @@
 +++
 title = "Lab 4: Motors and Open Loop Control"
 date = "2026-03-04"
+
+[extra.preview]
+image = "content/posts/lab4/car_setup.png"
+alt = "Inside the robot chassis, with the battery, drivers, and sensors in place."
 +++
 
 This lab focuses on integrating motor control hardware with the Artemis microcontroller to enable untethered robotic motion. The objective is to design a stable power and control system for DC motors using a motor driver and PWM signals while ensuring reliable operation of the microcontroller and sensors.

@@ -1,6 +1,10 @@
 +++
 title = "Lab 1: Artemis and Bluetooth"
 date = "2026-02-03"
+
+[extra.preview]
+image = "content/posts/lab1/connection.png"
+alt = "The Python notebook finds the Artemis and connects to its Bluetooth service."
 +++
 
 The first part of the lab helped me become familiar with programming the SparkFun RedBoard Artemis Nano with the Arduino IDE. The second part introduces communication between the Artemis microcontroller and a host computer via Bluetooth Low Energy (BLE) using Python and Jupyter notebooks.
