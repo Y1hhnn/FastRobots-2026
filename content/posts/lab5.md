@@ -4,7 +4,7 @@ date = "2026-03-11"
 
 [extra.preview]
 video = "previews/lab5.mp4"
-alt = "The robot approaches a wall from four meters away using linear extrapolation between time-of-flight sensor readings."
+alt = "The robot approaches a wall from two meters away using linear extrapolation between time-of-flight sensor readings."
 poster = "previews/lab5.jpg"
 +++
 
