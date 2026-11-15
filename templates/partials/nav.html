@@ -1,0 +1,19 @@
+{% if current_path is defined and current_path == "/posts/" %}
+    <nav class="posts-nav" aria-label="Main navigation">
+        <a class="posts-nav-brand" href="{{ config.base_url }}">{{ config.title }}</a>
+        {% for item in config.extra.menu %}
+            <a href="{{ get_url(path=item.url) }}"
+               {% if item.url | trim_end_matches(pat="/") == current_path | trim_end_matches(pat="/") %}aria-current="page"{% endif %}>{{ item.name }}</a>
+        {% endfor %}
+        <div class="socials">
+            {% for social in config.extra.socials %}
+                <a class="social" href="{{ social.url }}"
+                   {% if config.markdown.external_links_target_blank %}target="_blank" rel="me noopener"{% else %}rel="me"{% endif %}>
+                    <img src="{{ get_url(path='icons/social/' ~ social.icon ~ '.svg') }}" alt="{{ social.name }}">
+                </a>
+            {% endfor %}
+        </div>
+    </nav>
+{% else %}
+    {% include "apollo/templates/partials/nav.html" %}
+{% endif %}

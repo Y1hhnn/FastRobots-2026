@@ -23,7 +23,7 @@ theme = "ayu-dark"
 stylesheets = ["posts.css"]
 theme = "auto"
 socials = [
-  { name = "github", url = "https://github.com/Y1hhnn/ble_robot_1.4.git", icon = "github" },
+  { name = "github", url = "https://github.com/Y1hhnn/FastRobots-2026/tree/board", icon = "github" },
 ]
 menu = [
   { name = "/posts", url = "/posts", weight = 1 },

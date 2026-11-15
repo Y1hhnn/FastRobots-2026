@@ -1,7 +1,9 @@
 {% extends "section.html" %}
 
+{% block title %}{% endblock title %}
+
 {% block post_list %}
-    <main class="post-list posts-index">
+    <main class="post-list posts-index" aria-label="{{ section.title }}">
         <ul class="posts-grid" role="list">
             {% for page in section.pages %}
                 <li class="list-item">

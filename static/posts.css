@@ -1,24 +1,87 @@
-.content:has(> .posts-index) > nav .right-nav a:is([href$="/posts"], [href$="/posts/"]):not(:hover) {
+.posts-nav {
+    flex-flow: row wrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0 12px;
+    padding-block: 4px 14px;
+    border-bottom: 1px solid currentColor;
+}
+
+.posts-nav-brand {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    font-size: 1.5rem;
+}
+
+.posts-nav [aria-current="page"] {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.posts-nav [aria-current="page"]:not(:hover) {
     color: var(--primary-color);
 }
 
-.posts-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem 2rem;
+.posts-nav .socials {
+    display: flex;
+    margin-inline-start: auto;
 }
 
-.posts-grid > li {
+.posts-nav .social {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+}
+
+.posts-nav .social:hover {
+    background: var(--bg-1);
+}
+
+.posts-nav .social img {
+    width: 16px;
+    height: 16px;
+}
+
+.posts-index > .posts-grid {
+    --row-space: 18px;
+    --row-rule: #999995;
+    container-type: inline-size;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: calc(2 * var(--row-space) + 1px) 2rem;
+    padding-top: var(--row-space);
+}
+
+.posts-grid > .list-item {
+    position: relative;
     display: grid;
     grid-template-rows: 1fr auto;
     align-items: start;
     row-gap: 0.5rem;
     min-width: 0;
+    margin: 0;
+}
+
+/* Draw one grid-wide line from the first item of each new row. */
+.posts-grid > li::before {
+    position: absolute;
+    inset-block-end: calc(100% + var(--row-space));
+    inset-inline-start: 0;
+    inline-size: 100cqi;
+    border-block-start: 1px solid var(--row-rule);
+    pointer-events: none;
+}
+
+.posts-grid > li:nth-child(2n + 3)::before {
+    content: "";
 }
 
 /* Keep the gallery date above the title at every width. */
 .posts-grid .post-header {
     display: block;
+    margin: 0;
 }
 
 .posts-grid .lab-number {
@@ -50,8 +113,36 @@
     border-radius: 0;
 }
 
+@media (prefers-color-scheme: dark) {
+    .posts-index > .posts-grid {
+        --row-rule: #777774;
+    }
+}
+
 @media (max-width: 490px) {
-    .posts-grid {
+    .posts-nav {
+        column-gap: 8px;
+        padding-bottom: 8px;
+    }
+
+    .posts-index > .posts-grid {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .posts-grid > li + li::before {
+        content: "";
+    }
+}
+
+@media (pointer: coarse) {
+    .posts-nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
+
+    .posts-nav .social {
+        display: grid;
+        min-width: 44px;
     }
 }
