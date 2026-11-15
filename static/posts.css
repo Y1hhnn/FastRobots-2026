@@ -1,28 +1,107 @@
-.posts-index .list-item {
-    margin-bottom: 2rem;
+/* The navigation already identifies the section visually. */
+.posts-index-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    margin: 0;
 }
 
-.posts-index .post-header {
+.content:has(> .posts-index) > nav {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--text-0);
+    font-family: var(--mono-text-font), monospace;
+}
+
+.content:has(> .posts-index) > nav .left-nav {
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.content:has(> .posts-index) > nav .right-nav a:is([href$="/posts"], [href$="/posts/"]) {
+    color: var(--primary-color);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.content:has(> .posts-index) > nav .right-nav a:hover {
+    background: transparent;
+    text-decoration: underline;
+}
+
+.posts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px 18px;
+    margin: 0;
+    padding: 14px 0 0;
+    list-style: none;
+}
+
+.posts-grid > li {
+    display: grid;
+    grid-template-rows: 1fr auto;
     align-items: start;
-}
-
-.posts-index .post-header > div {
+    gap: 10px;
     min-width: 0;
 }
 
-.posts-index .post-preview-link {
-    display: block;
-    width: fit-content;
-    max-width: 100%;
+.posts-grid time {
+    font: 12px/1.4 var(--mono-text-font), monospace;
+    color: var(--text-1);
+}
+
+.posts-grid h2 {
+    margin: 4px 0 0;
+    font: 600 clamp(15px, 2.2vw, 21px)/1.23 system-ui, sans-serif;
+    letter-spacing: -0.025em;
+}
+
+.posts-grid h2::before {
+    content: none;
+}
+
+.posts-grid h2 a,
+.posts-grid a.post-preview {
     border: 0;
 }
 
-.posts-index .post-preview {
+.posts-grid h2 a:hover {
+    color: inherit;
+    background: transparent;
+    text-decoration: underline;
+}
+
+.posts-grid .lab-number {
+    color: var(--primary-color);
+    white-space: nowrap;
+}
+
+.posts-grid .post-preview {
     display: block;
-    margin-top: 0.6rem;
-    width: auto;
-    height: auto;
-    max-width: min(100%, 34rem);
-    max-height: 18rem;
-    border-radius: 0.5rem;
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    object-fit: contain;
+    background-color: var(--bg-1);
+}
+
+.posts-grid .post-preview picture,
+.posts-grid .post-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 0;
+}
+
+@media (max-width: 490px) {
+    .posts-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
