@@ -3,14 +3,6 @@
         zoom: 0.8;
     }
 
-    .posts-nav [aria-current="page"] {
-        margin-inline-start: auto;
-    }
-
-    .posts-nav .socials {
-        margin-inline-start: 0;
-    }
-
     /* Match the homepage's spacing from the navigation to its first heading. */
     .posts-index > .posts-grid {
         padding-block-start: 4rem;
