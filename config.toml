@@ -20,7 +20,7 @@ style = "inline"
 theme = "ayu-dark"
 
 [extra]
-stylesheets = ["posts.css"]
+stylesheets = ["posts.css", "desktop.css"]
 theme = "auto"
 socials = [
   { name = "github", url = "https://github.com/Y1hhnn/FastRobots-2026/tree/board", icon = "github" },
