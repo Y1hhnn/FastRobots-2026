@@ -1,17 +1,13 @@
 {% extends "section.html" %}
 
-{% block title %}
-    <h1 class="posts-index-heading">{{ section.title }}</h1>
-{% endblock title %}
-
 {% block post_list %}
-    <main class="posts-index">
+    <main class="post-list posts-index">
         <ul class="posts-grid" role="list">
             {% for page in section.pages %}
-                <li>
-                    <header>
+                <li class="list-item">
+                    <header class="post-header">
                         <time datetime="{{ page.date }}">{{ page.date | date(format="%Y-%m-%d") }}</time>
-                        <h2>
+                        <h1 class="title">
                             <a href="{{ page.permalink }}">
                                 {%- if page.title is matching("^Lab [0-9]+:") -%}
                                     {% set parts = page.title | split(pat=":") -%}
@@ -21,7 +17,7 @@
                                 {%- endif -%}
                             </a>
                             {% if page.draft %}<span class="draft-label">DRAFT</span>{% endif %}
-                        </h2>
+                        </h1>
                         {% if page.description or page.summary %}
                             <div class="meta">{{ page.description | default(value=page.summary) | safe }}</div>
                         {% endif %}
