@@ -27,7 +27,7 @@
                     {% if page.extra.preview %}
                         {% set preview = page.extra.preview %}
                         {% if preview.video %}
-                            <video class="post-preview" controls playsinline preload="none"
+                            <video class="post-preview" controls muted loop playsinline preload="none"
                                    poster="{{ get_url(path=preview.poster) }}" aria-label="{{ preview.alt }}">
                                 <source src="{{ get_url(path=preview.video) }}" type="video/mp4">
                                 <a href="{{ get_url(path=preview.video) }}">Watch the video</a>
@@ -51,4 +51,21 @@
             {% endfor %}
         </ul>
     </main>
+    <script type="module">
+        const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+        const videos = document.querySelectorAll(".posts-index video.post-preview");
+
+        function updatePlayback() {
+            for (const video of videos) {
+                if (reducedMotion.matches) {
+                    video.pause();
+                } else {
+                    video.play().catch(() => {}); // Controls remain available if autoplay is blocked.
+                }
+            }
+        }
+
+        reducedMotion.addEventListener("change", updatePlayback);
+        updatePlayback();
+    </script>
 {% endblock post_list %}
